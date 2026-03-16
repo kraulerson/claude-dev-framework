@@ -320,6 +320,17 @@ if [ "$HAS_EXISTING" = false ] || [ "$RECONFIGURE" = true ]; then
   DISCOVERY_JSON=$(run_discovery)
 fi
 
+# Validate all JSON before passing to jq (diagnose which value is bad)
+DISC_CLEAN=$(echo "$DISCOVERY_JSON" | jq '.' 2>/dev/null || echo '{}')
+for _name in RULES_JSON HOOKS_JSON DISC_CLEAN; do
+  eval "_val=\$$_name"
+  if ! echo "$_val" | jq '.' >/dev/null 2>&1; then
+    echo "ERROR: $_name is not valid JSON:" >&2
+    echo "$_val" >&2
+    exit 1
+  fi
+done
+
 # Write manifest
 jq -n \
   --arg fv "$FW_VERSION" \
@@ -328,7 +339,7 @@ jq -n \
   --arg pr "$PROFILE" \
   --argjson rules "$RULES_JSON" \
   --argjson hooks "$HOOKS_JSON" \
-  --argjson disc "$(echo "$DISCOVERY_JSON" | jq '.' 2>/dev/null || echo '{}')" \
+  --argjson disc "$DISC_CLEAN" \
   '{
     frameworkVersion: $fv,
     frameworkCommit: $fc,
@@ -352,10 +363,17 @@ jq -n \
 
 # Generate settings.json
 SETTINGS=$(generate_settings_json "${ALL_HOOKS[@]}")
-if [ -f ".claude/settings.json" ]; then
+if ! echo "$SETTINGS" | jq '.' >/dev/null 2>&1; then
+  echo "ERROR: generate_settings_json produced invalid JSON:" >&2
+  echo "$SETTINGS" >&2
+  exit 1
+fi
+
+if [ -f ".claude/settings.json" ] && jq '.' .claude/settings.json >/dev/null 2>&1; then
   # Merge: preserve existing keys, replace hooks
+  HOOKS_PART=$(echo "$SETTINGS" | jq '.hooks')
   EXISTING=$(cat .claude/settings.json)
-  echo "$EXISTING" | jq --argjson h "$(echo "$SETTINGS" | jq '.hooks')" '. + {hooks: $h}' > .claude/settings.json.tmp
+  echo "$EXISTING" | jq --argjson h "$HOOKS_PART" '. + {hooks: $h}' > .claude/settings.json.tmp
   mv .claude/settings.json.tmp .claude/settings.json
 else
   echo "$SETTINGS" > .claude/settings.json
