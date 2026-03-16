@@ -74,10 +74,16 @@ parse_profile() {
   local inherits=$(grep '^inherits:' "$profile_file" | awk '{print $2}')
   [ -n "$inherits" ] && [ "$inherits" != "null" ] && parse_profile "$inherits"
 
-  grep -A 100 '^rules:' "$profile_file" | grep '^ *- ' | sed 's/^ *- //' | while read -r line; do
+  # Extract list items under a top-level YAML key, stopping at the next top-level key
+  _yaml_list() {
+    local key="$1" file="$2"
+    sed -n "/^${key}:/,/^[a-zA-Z_]/p" "$file" | grep '^ *- ' | sed 's/^ *- //'
+  }
+
+  _yaml_list rules "$profile_file" | while read -r line; do
     echo "rule:$line"
   done
-  grep -A 100 '^hooks:' "$profile_file" | grep '^ *- ' | head -20 | sed 's/^ *- //' | while read -r line; do
+  _yaml_list hooks "$profile_file" | while read -r line; do
     echo "hook:$line"
   done
 }
