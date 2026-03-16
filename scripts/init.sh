@@ -84,46 +84,78 @@ parse_profile() {
 
 # ---- Helper: Generate settings.json from active hooks ----
 generate_settings_json() {
-  local hooks_json='{"hooks":{}}'
   # Hook registry: name -> event:matcher
-  declare -A REG=(
-    [session-start]="SessionStart:"
-    [enforce-evaluate]="PreToolUse:Bash"
-    [enforce-superpowers]="PreToolUse:Write|Edit"
-    [pre-commit-checks]="PreToolUse:Bash"
-    [branch-safety]="PreToolUse:Bash"
-    [stop-checklist]="Stop:"
-    [pre-compact-reminder]="PreCompact:"
-    [changelog-sync-check]="PreToolUse:Write|Edit"
-    [sync-tracker]="PostToolUse:Bash"
-    [scalability-check]="PreToolUse:Write|Edit"
-  )
+  # Stored as flat list of "hookname=event:matcher" for bash 3.2 compat
+  local REG_ENTRIES="
+session-start=SessionStart:
+enforce-evaluate=PreToolUse:Bash
+enforce-superpowers=PreToolUse:Write|Edit
+pre-commit-checks=PreToolUse:Bash
+branch-safety=PreToolUse:Bash
+stop-checklist=Stop:
+pre-compact-reminder=PreCompact:
+changelog-sync-check=PreToolUse:Write|Edit
+sync-tracker=PostToolUse:Bash
+scalability-check=PreToolUse:Write|Edit
+"
 
-  # Build by event+matcher grouping
-  declare -A GROUPS
+  # Lookup a hook's mapping from the registry
+  _reg_lookup() {
+    local needle="$1"
+    echo "$REG_ENTRIES" | while IFS='=' read -r name mapping; do
+      [ "$name" = "$needle" ] && echo "$mapping" && return
+    done
+  }
+
+  # Build grouped entries as lines: "event|matcher|json_entry"
+  local grouped_lines=""
   for hook in "$@"; do
-    local mapping="${REG[$hook]:-}"
+    local mapping
+    mapping=$(_reg_lookup "$hook")
     [ -z "$mapping" ] && continue
     local event="${mapping%%:*}"
     local matcher="${mapping#*:}"
-    local key="${event}|${matcher}"
     local entry='{"type":"command","command":"$CLAUDE_PROJECT_DIR/.claude/framework/hooks/'"${hook}"'.sh"}'
-    GROUPS["$key"]="${GROUPS[$key]:-}${GROUPS[$key]:+,}$entry"
+    grouped_lines="${grouped_lines}${event}|${matcher}|${entry}"$'\n'
   done
+
+  # Get unique event|matcher keys
+  local unique_keys
+  unique_keys=$(echo "$grouped_lines" | awk -F'|' 'NF>=2{print $1"|"$2}' | sort -u)
 
   # Assemble JSON
   local result='{'
   local first_event=true
-  declare -A EVENTS_DONE
-  for key in "${!GROUPS[@]}"; do
+  local open_events=""
+  while IFS= read -r key; do
+    [ -z "$key" ] && continue
     local event="${key%%|*}"
     local matcher="${key#*|}"
-    local entries="${GROUPS[$key]}"
 
-    if [ "${EVENTS_DONE[$event]:-}" != "true" ]; then
-      [ "$first_event" = false ] && result="${result},"
+    # Collect all entries for this key
+    local entries=""
+    while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      local line_event="${line%%|*}"
+      local rest="${line#*|}"
+      local line_matcher="${rest%%|*}"
+      local line_entry="${rest#*|}"
+      if [ "${line_event}|${line_matcher}" = "$key" ]; then
+        [ -n "$entries" ] && entries="${entries},"
+        entries="${entries}${line_entry}"
+      fi
+    done <<< "$grouped_lines"
+
+    # Check if this event was already started
+    local event_started=false
+    case "$open_events" in
+      *"|${event}|"*) event_started=true ;;
+    esac
+
+    if [ "$event_started" = false ]; then
+      [ "$first_event" = false ] && result="${result}],"
       result="${result}\"${event}\":["
-      EVENTS_DONE[$event]="started"
+      open_events="${open_events}|${event}|"
       first_event=false
     else
       result="${result},"
@@ -134,16 +166,15 @@ generate_settings_json() {
     else
       result="${result}{\"hooks\":[${entries}]}"
     fi
-  done
-  # Close all event arrays
-  for event in "${!EVENTS_DONE[@]}"; do
-    result="${result}]"
-  done
+  done <<< "$unique_keys"
+  # Close last event array if any
+  [ "$first_event" = false ] && result="${result}]"
   result="${result}}"
 
   # Merge with existing settings if present
   if [ -f ".claude/settings.json" ] && command -v jq &>/dev/null; then
-    local existing=$(cat .claude/settings.json)
+    local existing
+    existing=$(cat .claude/settings.json)
     echo "$existing" | jq --argjson h "$(echo "$result" | jq '.')" '.hooks = $h.hooks // $h'
   else
     echo "{\"hooks\":$(echo "$result" | jq '.' 2>/dev/null || echo "$result")}" | jq '.' 2>/dev/null || echo "{\"hooks\":$result}"
