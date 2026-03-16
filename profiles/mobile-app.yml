@@ -1,0 +1,35 @@
+name: mobile-app
+description: Native or cross-platform mobile applications (iOS, Android, Flutter, React Native, KMP)
+inherits: _base
+
+rules:
+  - version-bump
+  - changelog-update
+  - observability
+  - future-scalability
+
+hooks:
+  - pre-commit-checks
+  - branch-safety
+  - changelog-sync-check
+  - sync-tracker
+  - scalability-check
+
+discovery_questions:
+  - key: platforms
+    question: "Which mobile platforms does this project target?"
+    examples: "iOS, Android, both, Flutter cross-platform"
+  - key: crossPlatformTool
+    question: "Are you using a cross-platform framework?"
+    examples: "KMP, Flutter, React Native, native only"
+  - key: appStore
+    question: "Is this app published or planned for app stores?"
+    examples: "Google Play, App Store, both, internal only"
+  - key: billing
+    question: "Does this app have in-app purchases or subscriptions?"
+    examples: "yes (StoreKit/Play Billing), no, planned"
+
+suggests:
+  sourceExtensions: [".kt", ".swift", ".ts", ".js", ".dart"]
+  changelogFile: "CHANGELOG.md"
+  protectedBranches: ["main", "master"]

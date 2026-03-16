@@ -1,0 +1,33 @@
+name: web-api
+description: Web APIs, REST services, GraphQL servers, backend applications
+inherits: _base
+
+rules:
+  - version-bump
+  - changelog-update
+  - observability
+  - future-scalability
+
+hooks:
+  - pre-commit-checks
+  - branch-safety
+  - scalability-check
+
+discovery_questions:
+  - key: framework
+    question: "What web framework does this project use?"
+    examples: "Express, FastAPI, Django, Rails, Actix, Gin"
+  - key: database
+    question: "What database(s) does this project use?"
+    examples: "PostgreSQL, MongoDB, Redis, SQLite, none"
+  - key: deployment
+    question: "Where is this deployed?"
+    examples: "AWS, GCP, Azure, Heroku, Docker, local only"
+  - key: clients
+    question: "What clients consume this API?"
+    examples: "web frontend, mobile app, third-party integrations, internal only"
+
+suggests:
+  sourceExtensions: [".ts", ".js", ".py", ".rb", ".go", ".rs", ".java", ".kt"]
+  changelogFile: "CHANGELOG.md"
+  protectedBranches: ["main", "master", "production"]

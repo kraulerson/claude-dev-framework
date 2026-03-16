@@ -1,0 +1,18 @@
+name: base
+description: Universal development discipline rules — active on ALL projects regardless of type
+inherits: null
+
+rules:
+  - evaluate-before-implement
+  - plan-before-code
+  - test-per-bugfix
+  - context-management
+  - session-discipline
+  - superpowers-workflow
+
+hooks:
+  - session-start
+  - enforce-evaluate
+  - enforce-superpowers
+  - stop-checklist
+  - pre-compact-reminder

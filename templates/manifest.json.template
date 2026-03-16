@@ -1,0 +1,24 @@
+{
+  "frameworkVersion": "FRAMEWORK_VERSION_PLACEHOLDER",
+  "frameworkCommit": "COMMIT_PLACEHOLDER",
+  "frameworkRepo": "kraulerson/claude-dev-framework",
+  "localClonePath": "~/.claude-dev-framework",
+  "lastSyncDate": "DATE_PLACEHOLDER",
+  "profile": "PROFILE_PLACEHOLDER",
+  "profileInherits": ["_base"],
+  "files": {},
+  "activeRules": [],
+  "activeHooks": [],
+  "projectConfig": {
+    "_base": {
+      "sourceExtensions": [".py", ".js", ".ts", ".go", ".rs", ".java", ".kt", ".swift"],
+      "protectedBranches": ["main"]
+    },
+    "branches": []
+  },
+  "discovery": {
+    "futurePlatforms": null,
+    "discoveryDate": null,
+    "lastReviewDate": null
+  }
+}
