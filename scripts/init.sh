@@ -90,109 +90,57 @@ parse_profile() {
 
 # ---- Helper: Generate settings.json from active hooks ----
 generate_settings_json() {
-  # Hook registry: name -> event:matcher
-  # Stored as flat list of "hookname=event:matcher" for bash 3.2 compat
-  local REG_ENTRIES="
-session-start=SessionStart:
-enforce-evaluate=PreToolUse:Bash
-enforce-superpowers=PreToolUse:Write|Edit
-pre-commit-checks=PreToolUse:Bash
-branch-safety=PreToolUse:Bash
-stop-checklist=Stop:
-pre-compact-reminder=PreCompact:
-changelog-sync-check=PreToolUse:Write|Edit
-sync-tracker=PostToolUse:Bash
-scalability-check=PreToolUse:Write|Edit
-"
+  local prefix='$CLAUDE_PROJECT_DIR/.claude/framework/hooks/'
 
-  # Lookup a hook's mapping from the registry
-  _reg_lookup() {
-    local needle="$1"
-    echo "$REG_ENTRIES" | while IFS='=' read -r name mapping; do
-      [ "$name" = "$needle" ] && echo "$mapping" && return
-    done
-  }
-
-  # Build grouped entries as lines: "event|matcher|json_entry"
-  local grouped_lines=""
+  # Build JSON entries for each hook, one per line, using jq for safe encoding
+  local entries=""
   for hook in "$@"; do
-    local mapping
-    mapping=$(_reg_lookup "$hook")
-    [ -z "$mapping" ] && continue
-    local event="${mapping%%:*}"
-    local matcher="${mapping#*:}"
-    local entry='{"type":"command","command":"$CLAUDE_PROJECT_DIR/.claude/framework/hooks/'"${hook}"'.sh"}'
-    grouped_lines="${grouped_lines}${event}|${matcher}|${entry}"$'\n'
+    local event="" matcher=""
+    case "$hook" in
+      session-start)        event="SessionStart"; matcher="" ;;
+      enforce-evaluate)     event="PreToolUse";   matcher="Bash" ;;
+      enforce-superpowers)  event="PreToolUse";   matcher="Write|Edit" ;;
+      pre-commit-checks)    event="PreToolUse";   matcher="Bash" ;;
+      branch-safety)        event="PreToolUse";   matcher="Bash" ;;
+      stop-checklist)       event="Stop";         matcher="" ;;
+      pre-compact-reminder) event="PreCompact";   matcher="" ;;
+      changelog-sync-check) event="PreToolUse";   matcher="Write|Edit" ;;
+      sync-tracker)         event="PostToolUse";  matcher="Bash" ;;
+      scalability-check)    event="PreToolUse";   matcher="Write|Edit" ;;
+      *) continue ;;
+    esac
+    entries="${entries}$(jq -n --arg e "$event" --arg m "$matcher" --arg c "${prefix}${hook}.sh" \
+      '{event:$e,matcher:$m,command:$c}')"$'\n'
   done
 
-  # Get unique event|matcher keys
-  local unique_keys
-  unique_keys=$(echo "$grouped_lines" | awk -F'|' 'NF>=2{print $1"|"$2}' | sort -u)
-
-  # Assemble JSON
-  local result='{'
-  local first_event=true
-  local open_events=""
-  while IFS= read -r key; do
-    [ -z "$key" ] && continue
-    local event="${key%%|*}"
-    local matcher="${key#*|}"
-
-    # Collect all entries for this key
-    local entries=""
-    while IFS= read -r line; do
-      [ -z "$line" ] && continue
-      local line_event="${line%%|*}"
-      local rest="${line#*|}"
-      local line_matcher="${rest%%|*}"
-      local line_entry="${rest#*|}"
-      if [ "${line_event}|${line_matcher}" = "$key" ]; then
-        [ -n "$entries" ] && entries="${entries},"
-        entries="${entries}${line_entry}"
-      fi
-    done <<< "$grouped_lines"
-
-    # Check if this event was already started
-    local event_started=false
-    case "$open_events" in
-      *"|${event}|"*) event_started=true ;;
-    esac
-
-    if [ "$event_started" = false ]; then
-      [ "$first_event" = false ] && result="${result}],"
-      result="${result}\"${event}\":["
-      open_events="${open_events}|${event}|"
-      first_event=false
-    else
-      result="${result},"
-    fi
-
-    if [ -n "$matcher" ]; then
-      result="${result}{\"matcher\":\"${matcher}\",\"hooks\":[${entries}]}"
-    else
-      result="${result}{\"hooks\":[${entries}]}"
-    fi
-  done <<< "$unique_keys"
-  # Close last event array if any
-  [ "$first_event" = false ] && result="${result}]"
-  result="${result}}"
-
-  # Merge with existing settings if present
-  if [ -f ".claude/settings.json" ] && command -v jq &>/dev/null; then
-    local existing
-    existing=$(cat .claude/settings.json)
-    echo "$existing" | jq --argjson h "$(echo "$result" | jq '.')" '.hooks = $h.hooks // $h'
-  else
-    echo "{\"hooks\":$(echo "$result" | jq '.' 2>/dev/null || echo "$result")}" | jq '.' 2>/dev/null || echo "{\"hooks\":$result}"
-  fi
+  # Let jq handle all grouping and JSON assembly
+  echo "$entries" | jq -s --arg prefix "$prefix" '
+    group_by(.event + "\u0000" + .matcher) |
+    map({
+      event: .[0].event,
+      matcher: .[0].matcher,
+      hooks: map({"type":"command","command":.command})
+    }) |
+    group_by(.event) |
+    map({
+      key: .[0].event,
+      value: map(
+        if .matcher != "" then {matcher: .matcher, hooks: .hooks}
+        else {hooks: .hooks}
+        end
+      )
+    }) |
+    from_entries |
+    {hooks: .}
+  '
 }
 
 # ---- Helper: Discovery Interview ----
 run_discovery() {
-  echo ""
-  echo "=== Project Discovery Interview ==="
-  echo "All questions are optional. Press Enter to skip any question."
-  echo ""
+  echo "" >&2
+  echo "=== Project Discovery Interview ===" >&2
+  echo "All questions are optional. Press Enter to skip any question." >&2
+  echo "" >&2
 
   local branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
   read -rp "1. What does the '$branch' branch represent? (e.g., 'iOS development', 'main dev branch'): " branch_purpose
@@ -200,7 +148,7 @@ run_discovery() {
   read -rp "3. What platform does this branch TARGET? (e.g., iOS 16+, Android API 26+, web, N/A): " target_platform
   read -rp "4. Are there other branches with different configurations? (y/n): " has_other_branches
 
-  local other_branches_json=""
+  local other_branches=""
   if [ "$has_other_branches" = "y" ]; then
     read -rp "   List branch names (comma-separated): " other_list
     IFS=',' read -ra BRANCHES <<< "$other_list"
@@ -208,7 +156,8 @@ run_discovery() {
       ob=$(echo "$ob" | xargs)  # trim
       read -rp "   Branch '$ob' — purpose? " ob_purpose
       read -rp "   Branch '$ob' — target platform? " ob_target
-      other_branches_json="${other_branches_json},\"branch:${ob}\":{\"purpose\":\"${ob_purpose}\",\"targetPlatform\":\"${ob_target}\"}"
+      other_branches="${other_branches}$(jq -n --arg name "$ob" --arg p "$ob_purpose" --arg t "$ob_target" \
+        '{("branch:" + $name): {purpose: $p, targetPlatform: $t}}')"$'\n'
     done
   fi
 
@@ -216,8 +165,30 @@ run_discovery() {
   read -rp "6. Will this project expand to other platforms in the future? (e.g., 'might add web dashboard'): " future_platforms
 
   local today=$(date +%Y-%m-%d)
-  local discovery_json="{\"branch:${branch}\":{\"purpose\":\"${branch_purpose}\",\"devOS\":\"${dev_os}\",\"targetPlatform\":\"${target_platform}\",\"buildTools\":\"${build_tools}\"}${other_branches_json},\"futurePlatforms\":$([ -n "$future_platforms" ] && echo "\"$future_platforms\"" || echo "null"),\"discoveryDate\":\"${today}\",\"lastReviewDate\":\"${today}\"}"
-  echo "$discovery_json"
+
+  # Build discovery JSON safely with jq (no manual string concatenation)
+  local base
+  base=$(jq -n \
+    --arg branch "$branch" \
+    --arg purpose "$branch_purpose" \
+    --arg os "$dev_os" \
+    --arg target "$target_platform" \
+    --arg tools "$build_tools" \
+    --arg future "$future_platforms" \
+    --arg today "$today" \
+    '{
+      ("branch:" + $branch): {purpose: $purpose, devOS: $os, targetPlatform: $target, buildTools: $tools},
+      futurePlatforms: (if $future != "" then $future else null end),
+      discoveryDate: $today,
+      lastReviewDate: $today
+    }')
+
+  # Merge in other branches if any
+  if [ -n "$other_branches" ]; then
+    echo "$other_branches" | jq -s --argjson base "$base" '$base + (map(.) | add)'
+  else
+    echo "$base"
+  fi
 }
 
 # ---- Migration Path ----
