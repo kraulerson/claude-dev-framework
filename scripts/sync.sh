@@ -90,6 +90,26 @@ jq --arg fv "$FW_VER" --arg fc "$FW_COMMIT" --arg sd "$TODAY" \
   '.frameworkVersion = $fv | .frameworkCommit = $fc | .lastSyncDate = $sd' "$MANIFEST" > "${MANIFEST}.tmp"
 mv "${MANIFEST}.tmp" "$MANIFEST"
 
+# Merge profile sourceExtensions into manifest (add new, keep existing)
+PROFILE=$(jq -r '.profile // empty' "$MANIFEST" 2>/dev/null)
+if [ -n "$PROFILE" ]; then
+  PROFILE_FILE="$FRAMEWORK_CLONE/profiles/${PROFILE}.yml"
+  if [ -f "$PROFILE_FILE" ]; then
+    # Extract the JSON array from the YAML sourceExtensions line
+    EXTS_LINE=$(grep 'sourceExtensions:' "$PROFILE_FILE" 2>/dev/null | sed 's/.*sourceExtensions: *//' || true)
+    if [ -n "$EXTS_LINE" ] && echo "$EXTS_LINE" | jq '.' >/dev/null 2>&1; then
+      BEFORE=$(jq -r '.projectConfig._base.sourceExtensions | length' "$MANIFEST" 2>/dev/null || echo 0)
+      jq --argjson new "$EXTS_LINE" \
+        '.projectConfig._base.sourceExtensions = (.projectConfig._base.sourceExtensions + $new | unique | sort)' \
+        "$MANIFEST" > "${MANIFEST}.tmp"
+      mv "${MANIFEST}.tmp" "$MANIFEST"
+      AFTER=$(jq -r '.projectConfig._base.sourceExtensions | length' "$MANIFEST" 2>/dev/null || echo 0)
+      ADDED=$((AFTER - BEFORE))
+      [ "$ADDED" -gt 0 ] && echo "  Merged $ADDED new source extension(s) from $PROFILE profile"
+    fi
+  fi
+fi
+
 # Regenerate settings.json hook registrations
 echo "Regenerating hook registrations..."
 ACTIVE_HOOKS=()
