@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/framework/hooks/session-start.sh"
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/framework/hooks/session-start.sh\""
           }
         ]
       }
@@ -14,17 +14,17 @@
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/framework/hooks/enforce-evaluate.sh" },
-          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/framework/hooks/pre-commit-checks.sh" },
-          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/framework/hooks/branch-safety.sh" }
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR/.claude/framework/hooks/enforce-evaluate.sh\"" },
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR/.claude/framework/hooks/pre-commit-checks.sh\"" },
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR/.claude/framework/hooks/branch-safety.sh\"" }
         ]
       },
       {
         "matcher": "Write|Edit",
         "hooks": [
-          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/framework/hooks/enforce-superpowers.sh" },
-          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/framework/hooks/changelog-sync-check.sh" },
-          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/framework/hooks/scalability-check.sh" }
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR/.claude/framework/hooks/enforce-superpowers.sh\"" },
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR/.claude/framework/hooks/changelog-sync-check.sh\"" },
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR/.claude/framework/hooks/scalability-check.sh\"" }
         ]
       }
     ],
@@ -32,21 +32,21 @@
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/framework/hooks/sync-tracker.sh" }
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR/.claude/framework/hooks/sync-tracker.sh\"" }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/framework/hooks/stop-checklist.sh" }
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR/.claude/framework/hooks/stop-checklist.sh\"" }
         ]
       }
     ],
     "PreCompact": [
       {
         "hooks": [
-          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/framework/hooks/pre-compact-reminder.sh" }
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR/.claude/framework/hooks/pre-compact-reminder.sh\"" }
         ]
       }
     ]

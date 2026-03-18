@@ -88,3 +88,4 @@ MARKER INSTRUCTIONS (MANDATORY — you MUST follow these):
 CTXEOF
 
 [ -n "$CTX" ] && printf "\n=== RECENT CONTEXT HISTORY ===\n%s\n=== END CONTEXT HISTORY ===" "$CTX"
+exit 0
