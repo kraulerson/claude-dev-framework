@@ -26,5 +26,4 @@ Before writing any source files, you MUST:
 For projects with existing code, the first evaluation or planning session should include understanding the current architecture, file structure, patterns, and conventions. This can be done through Superpowers brainstorming or by reading key files before proposing changes.
 
 ### Marker
-After presenting an evaluation AND getting user approval, create the marker:
-`touch /tmp/.claude_evaluated_{project_hash}`
+The evaluation marker is created automatically by the framework when the workflow is completed. Do not create it manually.

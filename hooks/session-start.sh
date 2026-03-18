@@ -82,14 +82,14 @@ WORKFLOW ENFORCEMENT (enforced by hooks — you cannot bypass these):
   The marker is created automatically when you invoke the skill.
   When blocked, invoke the skill immediately — do not present
   evaluations or propose approaches as a substitute.
-  Do NOT manually create the superpowers marker — forgery is detected.
   EVALUATION: Committing is BLOCKED until you present an evaluation
-  and the user explicitly approves. After user approval, run:
-    touch /tmp/.claude_evaluated_${HASH}
+  and the user explicitly approves. The marker is created automatically
+  when the framework detects workflow completion.
   PLAN CLOSURE: After completing Superpowers-planned work, document
-  the outcome: touch /tmp/.claude_plan_closed_${HASH}
-  SKIP: If the user says "skip evaluation" or "skip superpowers",
-  that counts as approval and you may create the corresponding marker.
+  the outcome (planned vs. actual, decisions made, issues deferred).
+  SKIP: Only when the user explicitly says "skip evaluation" or
+  "skip superpowers". You must never decide to skip on your own.
+  Do NOT create markers manually — they are managed by the framework.
 CTXEOF
 
 [ -n "$CTX" ] && printf "\n=== RECENT CONTEXT HISTORY ===\n%s\n=== END CONTEXT HISTORY ===" "$CTX"

@@ -25,6 +25,7 @@ generate_settings_json() {
       skill-tracker)        event="PostToolUse";  matcher="" ;;
       scalability-check)    event="PreToolUse";   matcher="Write|Edit" ;;
       pre-deploy-check)     event="PreToolUse";   matcher="Bash" ;;
+      marker-guard)         event="PreToolUse";   matcher="Bash" ;;
       *) continue ;;
     esac
     entries="${entries}$(jq -n --arg e "$event" --arg m "$matcher" --arg c "${prefix}${hook}.sh" \

@@ -17,8 +17,7 @@ Save the closure summary to the context history file (configured in `manifest.js
 
 ### Marker
 
-After documenting plan closure, create the marker:
-`touch /tmp/.claude_plan_closed_{project_hash}`
+The plan closure marker is created automatically by the framework when closure is documented. Do not create it manually.
 
 ### When to Skip
 
