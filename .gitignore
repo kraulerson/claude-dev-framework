@@ -2,3 +2,5 @@
 *.swp
 *.swo
 *~
+repo_dump.txt
+session-handoff.md
