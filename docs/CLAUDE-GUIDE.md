@@ -38,6 +38,10 @@ When a session ends (not initiated by the user), `stop-checklist.sh` checks:
 - Did any commit in this session look like a bug fix without a test? → **blocks**
 - Was context history updated in long sessions? → **blocks**
 
+If all checks pass and the session produced commits, it also **advises**:
+- **Plan closure** — if no plan closure marker exists, reminds you to document planned vs. actual outcomes
+- **Session handoff** — reminds you to save a handoff note to the context history file
+
 If the user explicitly ends the session (`stop_reason: "user"`), the checklist is skipped entirely.
 
 ## The Marker System
@@ -50,6 +54,7 @@ Markers are temporary files in `/tmp/` that track workflow completion. They are 
 | `.claude_superpowers_{hash}` | You invoke a Superpowers skill, then run `touch` | After successful `git commit` | `enforce-superpowers.sh` |
 | `.claude_session_start_{hash}` | Session starts (automatic) | Session ends | `stop-checklist.sh` |
 | `.claude_changelog_synced_{hash}` | Sync script succeeds (automatic) | Not auto-cleared | `changelog-sync-check.sh` |
+| `.claude_plan_closed_{hash}` | You document plan closure, then run `touch` | Session ends | `stop-checklist.sh` |
 
 **Important**: Markers clear after each commit. This means for each new piece of work in a session, you must go through the evaluation and Superpowers workflow again. This is intentional — it prevents a single approval from covering unrelated changes.
 
