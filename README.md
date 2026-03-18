@@ -67,6 +67,8 @@ evaluate-before-implement, plan-before-code, test-per-bugfix, version-bump, chan
 - [Rule Reference](docs/RULE_REFERENCE.md) — what each rule enforces
 - [Creating Profiles](docs/CREATING_PROFILES.md) — how to add project types
 - [Glossary](docs/GLOSSARY.md) — canonical terminology
+- [Claude Guide](docs/CLAUDE-GUIDE.md) — how the framework works from Claude's perspective
+- [Contributing](docs/CONTRIBUTING.md) — bash coding conventions
 
 ## Updating
 
