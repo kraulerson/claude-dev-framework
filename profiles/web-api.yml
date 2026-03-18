@@ -12,6 +12,7 @@ hooks:
   - pre-commit-checks
   - branch-safety
   - scalability-check
+  - pre-deploy-check
 
 discovery_questions:
   - key: framework
@@ -26,6 +27,12 @@ discovery_questions:
   - key: clients
     question: "What clients consume this API?"
     examples: "web frontend, mobile app, third-party integrations, internal only"
+  - key: deploymentModel
+    question: "How is this project deployed or tested?"
+    examples: "Docker on local server, App Store, manual APK, CI/CD pipeline, local only"
+  - key: deployCommands
+    question: "What commands deploy or restart this project?"
+    examples: "docker compose up -d, kubectl apply, ./deploy.sh, N/A"
 
 suggests:
   sourceExtensions: [".ts", ".js", ".py", ".rb", ".go", ".rs", ".java", ".kt"]

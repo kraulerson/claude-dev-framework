@@ -63,8 +63,15 @@
 - **Configured by:** `manifest.json → discovery → futurePlatforms`
 - **Disable:** Remove `scalability-check` from `manifest.json → activeHooks`
 
+## pre-deploy-check.sh
+- **Event:** PreToolUse (Bash)
+- **Blocking:** Advisory (JSON additionalContext)
+- **Purpose:** Warns before deployment commands (docker compose, kubectl, git pull, ssh, rsync) if there are unpushed commits
+- **Configured by:** `manifest.json → discovery → deployCommands` (custom deploy commands)
+- **Disable:** Remove `pre-deploy-check` from `manifest.json → activeHooks`
+
 ## sync-tracker.sh
 - **Event:** PostToolUse (Bash)
 - **Blocking:** No
-- **Purpose:** Creates changelog sync marker when sync scripts succeed
+- **Purpose:** Creates changelog sync marker when sync scripts succeed; clears evaluation/superpowers markers after successful commit
 - **Disable:** Remove `sync-tracker` from `manifest.json → activeHooks`

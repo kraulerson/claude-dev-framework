@@ -47,8 +47,8 @@ teardown_test_project() {
   rm -f "/tmp/.claude_session_start_${TEST_HASH}"
   rm -f "/tmp/.claude_changelog_synced_${TEST_HASH}"
 
-  # Remove temp directory
-  [ -n "$TEST_DIR" ] && rm -rf "$TEST_DIR"
+  # Remove temp directory and remote
+  [ -n "$TEST_DIR" ] && rm -rf "$TEST_DIR" "${TEST_DIR}_remote.git"
   unset CLAUDE_PROJECT_DIR TEST_DIR TEST_HASH
 }
 
@@ -67,6 +67,16 @@ commit_source_with_test() {
   echo "// test" > "$TEST_DIR/$testfile"
   git -C "$TEST_DIR" add "$filename" "$testfile"
   git -C "$TEST_DIR" commit -m "$message" --quiet
+}
+
+# Helper: set up a bare remote and push, establishing upstream tracking
+setup_remote() {
+  local remote_dir="${TEST_DIR}_remote.git"
+  git clone --bare "$TEST_DIR" "$remote_dir" --quiet 2>/dev/null
+  git -C "$TEST_DIR" remote add origin "$remote_dir" 2>/dev/null || git -C "$TEST_DIR" remote set-url origin "$remote_dir"
+  local branch
+  branch=$(git -C "$TEST_DIR" rev-parse --abbrev-ref HEAD)
+  git -C "$TEST_DIR" push -u origin "$branch" --quiet 2>/dev/null
 }
 
 # Helper: run a hook from within the test project directory

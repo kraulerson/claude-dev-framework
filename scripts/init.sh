@@ -107,6 +107,7 @@ generate_settings_json() {
       changelog-sync-check) event="PreToolUse";   matcher="Write|Edit" ;;
       sync-tracker)         event="PostToolUse";  matcher="Bash" ;;
       scalability-check)    event="PreToolUse";   matcher="Write|Edit" ;;
+      pre-deploy-check)    event="PreToolUse";   matcher="Bash" ;;
       *) continue ;;
     esac
     entries="${entries}$(jq -n --arg e "$event" --arg m "$matcher" --arg c "${prefix}${hook}.sh" \
