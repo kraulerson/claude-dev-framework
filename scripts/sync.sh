@@ -91,23 +91,34 @@ jq --arg fv "$FW_VER" --arg fc "$FW_COMMIT" --arg sd "$TODAY" \
 mv "${MANIFEST}.tmp" "$MANIFEST"
 
 # Merge profile sourceExtensions into manifest (add new, keep existing)
-PROFILE=$(jq -r '.profile // empty' "$MANIFEST" 2>/dev/null)
-if [ -n "$PROFILE" ]; then
-  PROFILE_FILE="$FRAMEWORK_CLONE/profiles/${PROFILE}.yml"
-  if [ -f "$PROFILE_FILE" ]; then
-    # Extract the JSON array from the YAML sourceExtensions line
-    EXTS_LINE=$(grep 'sourceExtensions:' "$PROFILE_FILE" 2>/dev/null | sed 's/.*sourceExtensions: *//' || true)
-    if [ -n "$EXTS_LINE" ] && echo "$EXTS_LINE" | jq '.' >/dev/null 2>&1; then
-      BEFORE=$(jq -r '.projectConfig._base.sourceExtensions | length' "$MANIFEST" 2>/dev/null || echo 0)
-      jq --argjson new "$EXTS_LINE" \
-        '.projectConfig._base.sourceExtensions = (.projectConfig._base.sourceExtensions + $new | unique | sort)' \
-        "$MANIFEST" > "${MANIFEST}.tmp"
-      mv "${MANIFEST}.tmp" "$MANIFEST"
-      AFTER=$(jq -r '.projectConfig._base.sourceExtensions | length' "$MANIFEST" 2>/dev/null || echo 0)
-      ADDED=$((AFTER - BEFORE))
-      [ "$ADDED" -gt 0 ] && echo "  Merged $ADDED new source extension(s) from $PROFILE profile"
-    fi
+# Checks both _base.yml and the project's profile for suggests.sourceExtensions
+_extract_yaml_extensions() {
+  local file="$1"
+  [ -f "$file" ] || return
+  # Extract multi-line flow sequence: sourceExtensions: [ ... ]
+  sed -n '/sourceExtensions: *\[/,/\]/p' "$file" 2>/dev/null \
+    | sed '1s/.*sourceExtensions: *//' \
+    | tr '\n' ' '
+}
+
+BEFORE=$(jq -r '.projectConfig._base.sourceExtensions | length' "$MANIFEST" 2>/dev/null || echo 0)
+MERGED=false
+
+for PROF_FILE in "$FRAMEWORK_CLONE/profiles/_base.yml" "$FRAMEWORK_CLONE/profiles/$(jq -r '.profile // empty' "$MANIFEST" 2>/dev/null).yml"; do
+  EXTS_JSON=$(_extract_yaml_extensions "$PROF_FILE")
+  if [ -n "$EXTS_JSON" ] && echo "$EXTS_JSON" | jq '.' >/dev/null 2>&1; then
+    jq --argjson new "$EXTS_JSON" \
+      '.projectConfig._base.sourceExtensions = (.projectConfig._base.sourceExtensions + $new | unique | sort)' \
+      "$MANIFEST" > "${MANIFEST}.tmp"
+    mv "${MANIFEST}.tmp" "$MANIFEST"
+    MERGED=true
   fi
+done
+
+if [ "$MERGED" = true ]; then
+  AFTER=$(jq -r '.projectConfig._base.sourceExtensions | length' "$MANIFEST" 2>/dev/null || echo 0)
+  ADDED=$((AFTER - BEFORE))
+  [ "$ADDED" -gt 0 ] && echo "  Merged $ADDED new source extension(s) into manifest"
 fi
 
 # Regenerate settings.json hook registrations

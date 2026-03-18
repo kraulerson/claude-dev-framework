@@ -55,11 +55,65 @@ get_branch_config_array() {
 }
 
 is_source_file() {
-  local ext=".${1##*.}" extensions
+  local ext=".${1##*.}"
+
+  # 1. Deny known generated compound extensions (before allowlist — .min.js is not .js)
+  case "$1" in
+    *.min.js|*.min.css|*.d.ts) return 1 ;;
+  esac
+
+  # 2. Explicit allowlist from manifest (or fallback) — user override
+  local extensions
   extensions=$(get_branch_config_array '.sourceExtensions')
-  [ -z "$extensions" ] && extensions=".py .js .ts .go .rs .java .kt .swift .rb .c .cpp .h .css .scss .less .html .jsx .tsx .vue .svelte"
+  if [ -z "$extensions" ]; then
+    extensions=".html .css .scss .less .sass .jsx .tsx .vue .svelte"
+    extensions="$extensions .js .ts .mjs .cjs"
+    extensions="$extensions .py .ipynb"
+    extensions="$extensions .java .kt .kts .scala .groovy"
+    extensions="$extensions .cs .fs .vb"
+    extensions="$extensions .swift .m .mm"
+    extensions="$extensions .c .cpp .h .hpp .rs .go .zig .asm .s"
+    extensions="$extensions .rb .erb"
+    extensions="$extensions .php"
+    extensions="$extensions .sh .bash .zsh"
+    extensions="$extensions .bat .cmd .ps1 .psm1 .vbs"
+    extensions="$extensions .dart"
+    extensions="$extensions .ex .exs .erl"
+    extensions="$extensions .hs"
+    extensions="$extensions .clj .cljs"
+    extensions="$extensions .lua"
+    extensions="$extensions .r .R"
+    extensions="$extensions .pl .pm"
+    extensions="$extensions .sql .graphql .proto"
+    extensions="$extensions .tf .hcl"
+  fi
   for e in $extensions; do [ "$ext" = "$e" ] && return 0; done
-  return 1
+
+  # 3. Doc/config files are not source
+  is_doc_or_config "$1" && return 1
+
+  # 4. Denylist: binary, generated, and data formats
+  case "$ext" in
+    # Images
+    .png|.jpg|.jpeg|.gif|.svg|.ico|.webp|.bmp) return 1 ;;
+    # Audio/video
+    .mp3|.mp4|.wav|.mov|.avi|.ogg|.flac|.mkv) return 1 ;;
+    # Documents/archives
+    .pdf|.zip|.tar|.gz|.7z|.rar|.bz2|.xz) return 1 ;;
+    # Fonts
+    .woff|.woff2|.ttf|.eot|.otf) return 1 ;;
+    # Compiled/binary
+    .jar|.dll|.exe|.so|.dylib|.o|.pyc|.class|.wasm) return 1 ;;
+    # Lock/database
+    .lock|.sqlite|.db) return 1 ;;
+    # Generated
+    .map) return 1 ;;
+    # Data formats
+    .csv|.tsv|.parquet|.avro) return 1 ;;
+  esac
+
+  # 5. Default: treat unknown extensions as source
+  return 0
 }
 
 is_test_file() {

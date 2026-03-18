@@ -23,6 +23,5 @@ discovery_questions:
     examples: "just me, my team, open source / public"
 
 suggests:
-  sourceExtensions: [".py", ".rs", ".go", ".ts", ".js", ".sh"]
   changelogFile: "CHANGELOG.md"
   protectedBranches: ["main", "master"]

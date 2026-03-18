@@ -36,3 +36,27 @@ hooks:
   - enforce-superpowers
   - stop-checklist
   - pre-compact-reminder
+
+suggests:
+  sourceExtensions: [
+    ".html", ".css", ".scss", ".less", ".sass", ".jsx", ".tsx", ".vue", ".svelte",
+    ".js", ".ts", ".mjs", ".cjs",
+    ".py", ".ipynb",
+    ".java", ".kt", ".kts", ".scala", ".groovy",
+    ".cs", ".fs", ".vb",
+    ".swift", ".m", ".mm",
+    ".c", ".cpp", ".h", ".hpp", ".rs", ".go", ".zig", ".asm", ".s",
+    ".rb", ".erb",
+    ".php",
+    ".sh", ".bash", ".zsh",
+    ".bat", ".cmd", ".ps1", ".psm1", ".vbs",
+    ".dart",
+    ".ex", ".exs", ".erl",
+    ".hs",
+    ".clj", ".cljs",
+    ".lua",
+    ".r", ".R",
+    ".pl", ".pm",
+    ".sql", ".graphql", ".proto",
+    ".tf", ".hcl"
+  ]
