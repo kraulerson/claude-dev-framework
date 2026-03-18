@@ -15,15 +15,14 @@ HASH=$(get_project_hash)
 [ -f "/tmp/.claude_superpowers_${HASH}" ] && exit 0
 
 cat >&2 << MSG
-BLOCKED — You MUST invoke a Superpowers skill before writing source files.
+BLOCKED — Source file edit requires Superpowers workflow.
 
-DO NOT present an evaluation, propose an approach, or ask to proceed.
-DO NOT try to shortcut around this with text. That is not compliance.
+You MUST invoke superpowers:brainstorming before editing source files.
+Do NOT present a text evaluation as a substitute.
+Do NOT ask the user if you should proceed without brainstorming.
+Do NOT skip this because the change seems simple.
 
-YOUR ONLY OPTIONS:
-  1. Invoke the Superpowers brainstorming skill now (use the Skill tool)
-  2. If the user has already said "skip superpowers", run: touch /tmp/.claude_superpowers_${HASH}
-
-This edit will not proceed until the marker exists.
+After completing brainstorming, run: touch /tmp/.claude_superpowers_${HASH}
+Then retry the edit.
 MSG
 exit 2

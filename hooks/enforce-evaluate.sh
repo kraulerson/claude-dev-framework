@@ -11,5 +11,15 @@ echo "$COMMAND" | grep -qE '^\s*git\s+commit' || exit 0
 HASH=$(get_project_hash)
 [ -f "/tmp/.claude_evaluated_${HASH}" ] && exit 0
 
-echo "BLOCKED — The evaluate-before-implement rule requires you to present an evaluation (pros, cons, alternatives) and get user approval before committing. If the user has already said 'skip evaluation', create the marker. Otherwise, follow the workflow. Marker: touch /tmp/.claude_evaluated_${HASH}" >&2
+cat >&2 << MSG
+BLOCKED — Commit requires evaluate-before-implement workflow.
+
+You MUST present an evaluation (pros, cons, alternatives) and get user approval before committing.
+Do NOT commit and explain afterward.
+Do NOT assume the user approves because they asked for the change.
+Do NOT skip this because the change seems simple.
+
+After the user approves your evaluation, run: touch /tmp/.claude_evaluated_${HASH}
+Then retry the commit.
+MSG
 exit 2
