@@ -48,15 +48,15 @@ for src in "$FRAMEWORK_CLONE"/hooks/*.sh; do
       # Check if locally modified
       MANIFEST_HASH=$(jq -r ".files[\"framework/hooks/$name\"].globalHash // empty" "$MANIFEST" 2>/dev/null || echo "")
       if [ -n "$MANIFEST_HASH" ] && [ "$dest_hash" != "$MANIFEST_HASH" ]; then
-        echo "  ⚠ $name (CONFLICT — locally modified AND global changed)"
+        echo "  ⚠ $name (CONFLICT — locally modified AND upstream changed)"
         echo "    Local differs from last sync. Options:"
-        echo "    (g) Take global version"
+        echo "    (g) Take upstream version"
         echo "    (l) Keep local version"
         echo "    (d) Show diff"
         read -rp "    Choice [g/l/d]: " choice
         case "$choice" in
-          g) cp "$src" "$dest"; chmod +x "$dest"; echo "    → Took global"; ((UPDATED++)) ;;
-          d) diff "$dest" "$src" || true; read -rp "    Take global? (y/n): " yn; [ "$yn" = "y" ] && cp "$src" "$dest" && chmod +x "$dest" && ((UPDATED++)) || ((SKIPPED++)) ;;
+          g) cp "$src" "$dest"; chmod +x "$dest"; echo "    → Took upstream"; ((UPDATED++)) ;;
+          d) diff "$dest" "$src" || true; read -rp "    Take upstream? (y/n): " yn; [ "$yn" = "y" ] && cp "$src" "$dest" && chmod +x "$dest" && ((UPDATED++)) || ((SKIPPED++)) ;;
           *) echo "    → Kept local"; ((SKIPPED++)) ;;
         esac
         ((CONFLICTS++))

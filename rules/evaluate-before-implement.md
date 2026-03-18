@@ -22,5 +22,5 @@ Before writing any implementation code, you MUST:
 - Emergency hotfixes where the user has already decided the approach
 
 ### Marker
-After presenting an evaluation AND receiving user approval, create the marker:
+After presenting an evaluation AND getting user approval, create the marker:
 `touch /tmp/.claude_evaluated_{project_hash}`

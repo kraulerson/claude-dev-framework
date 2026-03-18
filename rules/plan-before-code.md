@@ -11,4 +11,4 @@ Use the Superpowers `writing-plans` skill, which produces a step-by-step plan wi
 ### When to Skip
 - Changes touching 1-2 files
 - The user has already provided a detailed plan
-- Trivial/mechanical changes (rename, formatting)
+- Trivial changes (rename, formatting)

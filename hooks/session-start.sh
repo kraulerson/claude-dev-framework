@@ -72,14 +72,14 @@ $([ -n "$WARNINGS" ] && printf "%b" "$WARNINGS")$([ -n "$DISC_WARN" ] && printf 
 ACTIVE RULES:${RULES:-"  (none configured)"}
 
 MARKER INSTRUCTIONS (MANDATORY — you MUST follow these):
-  After presenting an evaluation and receiving user approval, run:
+  After presenting an evaluation and getting user approval, run:
     touch /tmp/.claude_evaluated_${HASH}
   After invoking a Superpowers skill (brainstorming, planning, TDD), run:
     touch /tmp/.claude_superpowers_${HASH}
   If the user says "skip evaluation" or "skip superpowers", run the
   corresponding touch command to create the marker.
   These markers are checked by enforcement hooks. Without them, you will
-  receive advisory reminders before writing source code or committing.
+  receive advisory reminders before writing source files or committing.
 CTXEOF
 
 [ -n "$CTX" ] && printf "\n=== RECENT CONTEXT HISTORY ===\n%s\n=== END CONTEXT HISTORY ===" "$CTX"

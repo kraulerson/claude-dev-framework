@@ -19,7 +19,7 @@ bash ~/.claude-dev-framework/scripts/init.sh
 
 ```
 ┌─────────────────────────────────────────────────┐
-│  Global Template Repo (this repo)                │
+│  Upstream Repo (this repo)                       │
 │  ~/.claude-dev-framework/ (local clone)          │
 │  Universal hooks, rules, profiles                │
 └──────────────────────┬──────────────────────────┘
@@ -27,7 +27,7 @@ bash ~/.claude-dev-framework/scripts/init.sh
                        ▼
 ┌─────────────────────────────────────────────────┐
 │  Your Project .claude/                           │
-│  ├── framework/  ← synced from global            │
+│  ├── framework/  ← synced from local clone        │
 │  ├── project/    ← your project-specific rules   │
 │  ├── manifest.json                               │
 │  └── settings.json                               │
@@ -35,8 +35,8 @@ bash ~/.claude-dev-framework/scripts/init.sh
 ```
 
 **10 hooks** enforce rules mechanically via Claude Code's hook API:
-- **evaluate-before-implement** — blocks committing without presenting evaluation
-- **enforce-superpowers** — blocks source code writes without invoking Superpowers workflow
+- **evaluate-before-implement** — advises before committing without presenting evaluation
+- **enforce-superpowers** — advises before writing source files without invoking Superpowers workflow
 - **pre-commit-checks** — blocks commits missing version bumps or changelog updates
 - **branch-safety** — blocks pushes to protected branches
 - **stop-checklist** — blocks session end without committing work
@@ -66,6 +66,7 @@ evaluate-before-implement, plan-before-code, test-per-bugfix, version-bump, chan
 - [Hook Reference](docs/HOOK_REFERENCE.md) — what each hook does
 - [Rule Reference](docs/RULE_REFERENCE.md) — what each rule enforces
 - [Creating Profiles](docs/CREATING_PROFILES.md) — how to add project types
+- [Glossary](docs/GLOSSARY.md) — canonical terminology
 
 ## Updating
 
