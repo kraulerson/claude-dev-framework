@@ -109,7 +109,7 @@ Profiles use YAML inheritance — all profiles inherit from `_base`, which provi
 - [jq](https://jqlang.github.io/jq/) — `brew install jq` (macOS) / `apt install jq` (Linux)
 - Git
 - [Claude Code](https://claude.com/claude-code)
-- [Superpowers plugin](https://claude.com/claude-code) — install via `/plugins` in Claude Code
+- [Superpowers plugin](https://github.com/obra/superpowers) — install via `/plugins` in Claude Code
 
 ## Documentation
 
