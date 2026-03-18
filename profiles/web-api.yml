@@ -35,6 +35,6 @@ discovery_questions:
     examples: "docker compose up -d, kubectl apply, ./deploy.sh, N/A"
 
 suggests:
-  sourceExtensions: [".ts", ".js", ".py", ".rb", ".go", ".rs", ".java", ".kt"]
+  sourceExtensions: [".ts", ".js", ".py", ".rb", ".go", ".rs", ".java", ".kt", ".css", ".scss", ".html", ".jsx", ".tsx", ".vue", ".svelte"]
   changelogFile: "CHANGELOG.md"
   protectedBranches: ["main", "master", "production"]

@@ -57,7 +57,7 @@ get_branch_config_array() {
 is_source_file() {
   local ext=".${1##*.}" extensions
   extensions=$(get_branch_config_array '.sourceExtensions')
-  [ -z "$extensions" ] && extensions=".py .js .ts .go .rs .java .kt .swift .rb .c .cpp .h"
+  [ -z "$extensions" ] && extensions=".py .js .ts .go .rs .java .kt .swift .rb .c .cpp .h .css .scss .less .html .jsx .tsx .vue .svelte"
   for e in $extensions; do [ "$ext" = "$e" ] && return 0; done
   return 1
 }
