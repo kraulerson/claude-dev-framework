@@ -73,3 +73,10 @@ is_doc_or_config() {
   case ".${1##*.}" in .md|.txt|.json|.yml|.yaml|.xml|.toml|.ini|.cfg|.conf) return 0 ;; esac
   return 1
 }
+
+validate_file_path() {
+  case "$1" in
+    *../*|*/../*) echo "REJECTED: path traversal" >&2; return 1 ;;
+  esac
+  return 0
+}

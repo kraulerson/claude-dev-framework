@@ -9,13 +9,19 @@ PROFILES_DIR="${FRAMEWORK_DIR}/profiles"
 detect_signals() {
   local signals=""
   [ -f "build.gradle.kts" ] || [ -f "build.gradle" ] && signals="${signals}gradle "
-  [ -f "Package.swift" ] || ls *.xcodeproj &>/dev/null 2>&1 && signals="${signals}swift "
+  [ -f "Package.swift" ] || compgen -G "*.xcodeproj" >/dev/null 2>&1 && signals="${signals}swift "
   [ -f "pubspec.yaml" ] && signals="${signals}flutter "
-  [ -f "package.json" ] && signals="${signals}node "
+  if [ -f "package.json" ]; then
+    signals="${signals}node "
+    grep -q "react-native" package.json 2>/dev/null && signals="${signals}reactnative "
+  fi
   [ -f "Cargo.toml" ] && signals="${signals}rust "
   [ -f "Dockerfile" ] || [ -f "docker-compose.yml" ] && signals="${signals}docker "
   [ -f "CMakeLists.txt" ] && signals="${signals}cmake "
-  [ -f "pyproject.toml" ] || [ -f "requirements.txt" ] || [ -f "setup.py" ] && signals="${signals}python "
+  if [ -f "pyproject.toml" ] || [ -f "requirements.txt" ] || [ -f "setup.py" ]; then
+    signals="${signals}python "
+    grep -qiE 'fastapi|django|flask|starlette|sanic' requirements.txt pyproject.toml setup.py 2>/dev/null && signals="${signals}pyweb "
+  fi
   [ -f "go.mod" ] && signals="${signals}go "
   [ -f "Gemfile" ] && signals="${signals}ruby "
   echo "$signals"
@@ -28,6 +34,8 @@ suggest_profile() {
     *swift*) echo "mobile-app" ;;
     *gradle*) echo "mobile-app" ;;
     *flutter*) echo "mobile-app" ;;
+    *reactnative*) echo "mobile-app" ;;
+    *pyweb*) echo "web-api" ;;
     *docker*node*|*docker*python*|*docker*go*|*docker*ruby*) echo "web-api" ;;
     *node*) echo "web-api" ;;
     *rust*) echo "cli-tool" ;;

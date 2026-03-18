@@ -288,13 +288,8 @@ cp "$FRAMEWORK_CLONE"/hooks/*.sh .claude/framework/hooks/
 cp "$FRAMEWORK_CLONE"/rules/*.md .claude/framework/rules/
 chmod +x .claude/framework/hooks/*.sh
 
-# Detect profile (clean setup) or use existing
-if [ "$RECONFIGURE" = true ] || [ "$HAS_EXISTING" = false ]; then
-  PROFILE=$(bash "$FRAMEWORK_CLONE/scripts/detect-profile.sh" | tail -1)
-else
-  PROFILE="mobile-app"  # Default for migration; user can reconfigure
-  echo "Using default profile: $PROFILE (run init.sh --reconfigure to change)"
-fi
+# Detect profile (runs for all paths — clean, migration, and reconfigure)
+PROFILE=$(bash "$FRAMEWORK_CLONE/scripts/detect-profile.sh" | tail -1)
 
 # Parse profile to get rules and hooks
 ALL_RULES=()
