@@ -6,7 +6,7 @@
 # Usage: generate_settings_json hook1 hook2 hook3 ...
 # Output: JSON object with { "hooks": { ... } } structure
 generate_settings_json() {
-  local prefix='"$CLAUDE_PROJECT_DIR/.claude/framework/hooks/'
+  local prefix='"$CLAUDE_PROJECT_DIR"/.claude/framework/hooks/'
 
   # Build JSON entries for each hook, one per line, using jq for safe encoding
   local entries=""
@@ -26,7 +26,7 @@ generate_settings_json() {
       pre-deploy-check)     event="PreToolUse";   matcher="Bash" ;;
       *) continue ;;
     esac
-    entries="${entries}$(jq -n --arg e "$event" --arg m "$matcher" --arg c "${prefix}${hook}.sh\"" \
+    entries="${entries}$(jq -n --arg e "$event" --arg m "$matcher" --arg c "${prefix}${hook}.sh" \
       '{event:$e,matcher:$m,command:$c}')"$'\n'
   done
 

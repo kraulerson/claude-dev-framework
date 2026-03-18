@@ -6,7 +6,7 @@ source "$SCRIPT_DIR/helpers/setup.sh"
 
 FRAMEWORK_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-test_generate_settings_quotes_paths() {
+test_generate_settings_quotes_variable() {
   # Source shared functions
   source "$FRAMEWORK_DIR/scripts/_shared.sh"
 
@@ -14,15 +14,19 @@ test_generate_settings_quotes_paths() {
   local output
   output=$(generate_settings_json session-start enforce-evaluate stop-checklist)
 
-  # Every command value should start and end with a literal double-quote
+  # Per Claude Code docs, commands must quote only the variable:
+  #   "$CLAUDE_PROJECT_DIR"/.claude/framework/hooks/hook.sh
+  # In the raw string value (after JSON decode), this means:
+  #   - Starts with " (opening quote around variable)
+  #   - Contains "/.claude (closing quote then path continues)
+  #   - Ends with .sh (no trailing quote)
   local all_commands
   all_commands=$(echo "$output" | jq -r '.. | .command? // empty')
   while IFS= read -r cmd; do
     [ -z "$cmd" ] && continue
-    local first="${cmd:0:1}"
-    local last="${cmd: -1}"
-    assert_equals '"' "$first" "command should start with quote: $cmd"
-    assert_equals '"' "$last" "command should end with quote: $cmd"
+    assert_contains "$cmd" '"$CLAUDE_PROJECT_DIR"' "command should quote the variable: $cmd"
+    local last="${cmd: -3}"
+    assert_equals '.sh' "$last" "command should end with .sh (no trailing quote): $cmd"
   done <<< "$all_commands"
 }
 
@@ -98,6 +102,6 @@ MANIFEST
 
 # --- Run ---
 echo "spaces-in-path (quoting)"
-test_generate_settings_quotes_paths
+test_generate_settings_quotes_variable
 test_hooks_execute_with_spaces_in_path
 run_tests
