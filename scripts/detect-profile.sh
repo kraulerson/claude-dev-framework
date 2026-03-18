@@ -14,6 +14,8 @@ detect_signals() {
   if [ -f "package.json" ]; then
     signals="${signals}node "
     grep -q "react-native" package.json 2>/dev/null && signals="${signals}reactnative "
+    grep -qiE '"(react|vue|svelte|angular|next|nuxt)"' package.json 2>/dev/null && signals="${signals}frontend "
+    grep -qiE '"(express|koa|hono|fastify)"' package.json 2>/dev/null && signals="${signals}nodebackend "
   fi
   [ -f "Cargo.toml" ] && signals="${signals}rust "
   [ -f "Dockerfile" ] || [ -f "docker-compose.yml" ] && signals="${signals}docker "
@@ -24,26 +26,52 @@ detect_signals() {
   fi
   [ -f "go.mod" ] && signals="${signals}go "
   [ -f "Gemfile" ] && signals="${signals}ruby "
+
+  # Full-stack signals: frontend + backend directories
+  if [ -d "client" ] || [ -d "frontend" ] || [ -d "src/components" ]; then
+    signals="${signals}frontenddir "
+  fi
+  if [ -d "server" ] || [ -d "backend" ] || [ -d "api" ]; then
+    signals="${signals}backenddir "
+  fi
   echo "$signals"
 }
 
 suggest_profile() {
   local signals="$1"
+
+  # Full-stack web-app: frontend framework + backend (directory or dependency)
   case "$signals" in
-    *gradle*swift*|*gradle*flutter*) echo "mobile-app" ;;
-    *swift*) echo "mobile-app" ;;
-    *gradle*) echo "mobile-app" ;;
-    *flutter*) echo "mobile-app" ;;
-    *reactnative*) echo "mobile-app" ;;
-    *pyweb*) echo "web-api" ;;
-    *docker*node*|*docker*python*|*docker*go*|*docker*ruby*) echo "web-api" ;;
-    *node*) echo "web-api" ;;
-    *rust*) echo "cli-tool" ;;
-    *python*) echo "cli-tool" ;;
-    *go*) echo "cli-tool" ;;
-    *cmake*) echo "cli-tool" ;;
-    *) echo "" ;;
+    *frontend*nodebackend*|*frontend*backenddir*|*frontend*pyweb*) echo "web-app"; return ;;
+    *frontenddir*backenddir*) echo "web-app"; return ;;
+    *nodebackend*frontenddir*) echo "web-app"; return ;;
   esac
+
+  # Mobile
+  case "$signals" in
+    *gradle*swift*|*gradle*flutter*) echo "mobile-app"; return ;;
+    *swift*) echo "mobile-app"; return ;;
+    *gradle*) echo "mobile-app"; return ;;
+    *flutter*) echo "mobile-app"; return ;;
+    *reactnative*) echo "mobile-app"; return ;;
+  esac
+
+  # Web API (backend only, no frontend signals)
+  case "$signals" in
+    *pyweb*) echo "web-api"; return ;;
+    *docker*node*|*docker*python*|*docker*go*|*docker*ruby*) echo "web-api"; return ;;
+    *node*) echo "web-api"; return ;;
+  esac
+
+  # CLI
+  case "$signals" in
+    *rust*) echo "cli-tool"; return ;;
+    *python*) echo "cli-tool"; return ;;
+    *go*) echo "cli-tool"; return ;;
+    *cmake*) echo "cli-tool"; return ;;
+  esac
+
+  echo ""
 }
 
 echo "=== Profile Detection ==="

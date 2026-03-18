@@ -1,0 +1,47 @@
+name: web-app
+description: Full-stack web applications with frontend and backend in one repository
+inherits: _base
+
+rules:
+  - version-bump
+  - changelog-update
+  - observability
+  - future-scalability
+
+hooks:
+  - pre-commit-checks
+  - branch-safety
+  - scalability-check
+  - pre-deploy-check
+  - changelog-sync-check
+  - sync-tracker
+
+discovery_questions:
+  - key: uiFramework
+    question: "What frontend framework does this project use?"
+    examples: "React, Vue, Svelte, Angular, Next.js, Nuxt, SvelteKit, plain HTML/JS"
+  - key: cssApproach
+    question: "How does this project handle styling?"
+    examples: "plain CSS, Tailwind, SCSS/SASS, CSS modules, styled-components, CSS-in-JS"
+  - key: renderingModel
+    question: "Is this a single-page app (SPA) or server-rendered?"
+    examples: "SPA, SSR, SSG, hybrid, multi-page"
+  - key: backendFramework
+    question: "What backend framework does this project use?"
+    examples: "Express, FastAPI, Django, Rails, Actix, Gin, none (static site)"
+  - key: database
+    question: "What database(s) does this project use?"
+    examples: "PostgreSQL, MongoDB, Redis, SQLite, Firebase, none"
+  - key: bundler
+    question: "What build tool or bundler does this project use?"
+    examples: "Vite, webpack, esbuild, Turbopack, none"
+  - key: deployment
+    question: "Where is this deployed?"
+    examples: "Docker, Vercel, Netlify, AWS, GCP, Azure, Heroku, local only"
+  - key: deployCommands
+    question: "What commands deploy or restart this project?"
+    examples: "docker compose up -d, vercel deploy, npm run deploy, N/A"
+
+suggests:
+  changelogFile: "CHANGELOG.md"
+  protectedBranches: ["main", "master"]

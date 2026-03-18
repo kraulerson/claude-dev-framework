@@ -90,8 +90,8 @@ evaluate-before-implement, plan-before-code, test-per-bugfix, test-strategy, ver
 
 ## Profiles
 
-**4 profiles** for different project types (extensible):
-`_base` (always active), `mobile-app`, `web-api`, `cli-tool`
+**5 profiles** for different project types (extensible):
+`_base` (always active), `mobile-app`, `web-app`, `web-api`, `cli-tool`
 
 Profiles use YAML inheritance — all profiles inherit from `_base`, which provides the universal rules and hooks. Project-type profiles add domain-specific rules, hooks, and discovery questions.
 
