@@ -14,5 +14,5 @@ is_source_file "$FILE_PATH" || exit 0
 HASH=$(get_project_hash)
 [ -f "/tmp/.claude_superpowers_${HASH}" ] && exit 0
 
-echo "BLOCKED — The Superpowers workflow (brainstorm → plan → implement) has not been invoked this session. Invoke the appropriate Superpowers skill before writing source files. If trivial, ask user to confirm skipping. Marker: touch /tmp/.claude_superpowers_${HASH}" >&2
+echo "BLOCKED — The Superpowers workflow (brainstorm → plan → implement) has not been invoked this session. Invoke the appropriate Superpowers skill before writing source files. If the user has already said 'skip superpowers', create the marker. Otherwise, follow the workflow. Marker: touch /tmp/.claude_superpowers_${HASH}" >&2
 exit 2
