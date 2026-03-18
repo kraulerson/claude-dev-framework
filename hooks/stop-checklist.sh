@@ -64,16 +64,31 @@ if [ -n "$ERRORS" ]; then
   exit 0
 fi
 
-# Advisory: suggest session handoff if work was done and context history is configured
-if [ -n "$SESSION_START" ] && [ -n "$CTX_HISTORY" ]; then
+# Advisory: suggest session handoff and plan closure if work was done
+if [ -n "$SESSION_START" ]; then
   SESSION_COMMITS=$(git log --oneline "${SESSION_START}..HEAD" 2>/dev/null | wc -l | xargs)
   if [ "$SESSION_COMMITS" -gt 0 ]; then
-    jq -n --arg f "$CTX_HISTORY" --arg n "$SESSION_COMMITS" '{
-      "hookSpecificOutput": {
-        "hookEventName": "Stop",
-        "additionalContext": ("Session produced " + $n + " commit(s). Consider saving a handoff note to " + $f + " — what was completed, what is pending, and what comes next — so the next session can pick up cleanly.")
-      }
-    }'
+    ADVISORIES=""
+
+    # Plan closure: if Superpowers was used (commits exist) and no closure marker
+    if [ ! -f "/tmp/.claude_plan_closed_${HASH}" ]; then
+      ADVISORIES="${ADVISORIES}If this session involved Superpowers-planned work, document plan closure: planned vs. actual, decisions made, issues deferred. Then run: touch /tmp/.claude_plan_closed_${HASH}\n\n"
+    fi
+
+    # Session handoff
+    if [ -n "$CTX_HISTORY" ]; then
+      ADVISORIES="${ADVISORIES}Consider saving a handoff note to ${CTX_HISTORY} — what was completed, what is pending, and what comes next — so the next session can pick up cleanly."
+    fi
+
+    if [ -n "$ADVISORIES" ]; then
+      MSG=$(printf "Session produced %s commit(s).\n\n%b" "$SESSION_COMMITS" "$ADVISORIES")
+      jq -n --arg m "$MSG" '{
+        "hookSpecificOutput": {
+          "hookEventName": "Stop",
+          "additionalContext": $m
+        }
+      }'
+    fi
   fi
 fi
 exit 0

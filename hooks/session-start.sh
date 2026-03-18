@@ -79,6 +79,8 @@ MARKER INSTRUCTIONS (MANDATORY — you MUST follow these):
     touch /tmp/.claude_evaluated_${HASH}
   After invoking a Superpowers skill (brainstorming, planning, TDD), run:
     touch /tmp/.claude_superpowers_${HASH}
+  After documenting plan closure (planned vs. actual, decisions, deferred), run:
+    touch /tmp/.claude_plan_closed_${HASH}
   If the user says "skip evaluation" or "skip superpowers", run the
   corresponding touch command to create the marker.
   These markers are checked by enforcement hooks. Without them, you will

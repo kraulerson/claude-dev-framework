@@ -46,6 +46,7 @@ teardown_test_project() {
   rm -f "/tmp/.claude_superpowers_${TEST_HASH}"
   rm -f "/tmp/.claude_session_start_${TEST_HASH}"
   rm -f "/tmp/.claude_changelog_synced_${TEST_HASH}"
+  rm -f "/tmp/.claude_plan_closed_${TEST_HASH}"
 
   # Remove temp directory and remote
   [ -n "$TEST_DIR" ] && rm -rf "$TEST_DIR" "${TEST_DIR}_remote.git"

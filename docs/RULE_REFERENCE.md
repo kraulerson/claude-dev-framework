@@ -13,4 +13,5 @@
 | observability | Evaluate monitoring/logging needs, never swallow errors | session-start.sh (context injection) | Internal utilities |
 | superpowers-workflow | Use Superpowers brainstorm/plan/implement for non-trivial work | enforce-superpowers.sh | Trivial changes, user says "skip" |
 | verify-after-complete | Walk user through verifying acceptance criteria after completing planned work | session-start.sh (context injection) | Trivial changes, user says "skip" |
+| plan-closure | Document outcome of Superpowers-planned work: planned vs. actual, decisions, deferred issues | stop-checklist.sh (advisory) | Trivial changes, user says "skip" |
 | future-scalability | Consider future platform plans in architecture decisions | scalability-check.sh | No future platforms configured |
