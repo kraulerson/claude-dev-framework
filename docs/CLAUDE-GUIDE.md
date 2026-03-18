@@ -42,7 +42,7 @@ If all checks pass and the session produced commits, it also **advises**:
 - **Plan closure** — if no plan closure marker exists, reminds you to document planned vs. actual outcomes
 - **Session handoff** — reminds you to save a handoff note to the context history file
 
-If the user explicitly ends the session (`stop_reason: "user"`), the checklist is skipped entirely.
+If the session ends due to `stop_reason: "user"` or `stop_reason: "tool_error"`, the checklist is skipped entirely.
 
 ## The Marker System
 
@@ -56,7 +56,7 @@ Markers are temporary files in `/tmp/` that track workflow completion. They are 
 | `.claude_changelog_synced_{hash}` | Sync script succeeds (automatic) | Not auto-cleared | `changelog-sync-check.sh` |
 | `.claude_plan_closed_{hash}` | You document plan closure, then run `touch` | Session ends | `stop-checklist.sh` |
 
-**Important**: Markers clear after each commit. This means for each new piece of work in a session, you must go through the evaluation and Superpowers workflow again. This is intentional — it prevents a single approval from covering unrelated changes.
+**Important**: The evaluation and Superpowers markers clear after each commit (via `sync-tracker.sh`). This means for each new piece of work in a session, you must go through those workflows again. This is intentional — it prevents a single approval from covering unrelated changes. Other markers have different lifecycles (see the "Cleared when" column above).
 
 ## Responding to Advisories
 
