@@ -24,6 +24,9 @@ discovery_questions:
   - key: apiIntegrations
     question: "Does this app integrate with external APIs?"
     examples: "none, AI APIs (Anthropic/OpenAI), payment processors, social media, internal only"
+  - key: codebaseMapping
+    question: "Should Claude map the existing codebase before starting work? (recommended for projects with existing code)"
+    examples: "yes, no (greenfield project)"
 
 hooks:
   - session-start

@@ -17,7 +17,7 @@ HASH=$(get_project_hash)
 jq -n --arg m "/tmp/.claude_superpowers_${HASH}" '{
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
-    "additionalContext": ("HOLD — The Superpowers workflow (brainstorm → plan → implement) has not been invoked this session. Invoke the appropriate Superpowers skill before writing source code. If trivial, ask user to confirm skipping. Marker: touch " + $m)
+    "additionalContext": ("HOLD — The Superpowers workflow (brainstorm → plan → implement) has not been invoked this session. Invoke the appropriate Superpowers skill before writing source files. If trivial, ask user to confirm skipping. Marker: touch " + $m)
   }
 }'
 exit 0

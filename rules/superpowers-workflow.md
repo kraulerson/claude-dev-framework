@@ -3,7 +3,7 @@ RULE: Use the Superpowers plugin workflow (brainstorm → plan → implement) fo
 ## Superpowers Workflow
 
 ### What This Rule Requires
-Before writing source code for any non-trivial task, invoke the appropriate Superpowers skill:
+Before writing source files for any non-trivial task, invoke the appropriate Superpowers skill:
 - **Brainstorming** — for new features, design decisions, creative work
 - **Writing Plans** — for multi-step implementation tasks
 - **TDD** — for test-driven development cycles

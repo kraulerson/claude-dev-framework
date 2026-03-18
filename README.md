@@ -34,7 +34,7 @@ bash ~/.claude-dev-framework/scripts/init.sh
 └─────────────────────────────────────────────────┘
 ```
 
-**10 hooks** enforce rules mechanically via Claude Code's hook API:
+**11 hooks** enforce rules mechanically via Claude Code's hook API:
 - **evaluate-before-implement** — advises before committing without presenting evaluation
 - **enforce-superpowers** — advises before writing source files without invoking Superpowers workflow
 - **pre-commit-checks** — blocks commits missing version bumps or changelog updates
@@ -44,10 +44,11 @@ bash ~/.claude-dev-framework/scripts/init.sh
 - **pre-compact-reminder** — warns before context compression
 - **changelog-sync-check** — warns before editing stale changelogs
 - **scalability-check** — reminds about future platform considerations
+- **pre-deploy-check** — advises before deployment commands if commits are unpushed
 - **sync-tracker** — tracks successful sync operations
 
-**10 rules** injected as context (one-line summaries at session start, full text available):
-evaluate-before-implement, plan-before-code, test-per-bugfix, version-bump, changelog-update, context-management, session-discipline, observability, superpowers-workflow, future-scalability
+**11 rules** injected as context (one-line summaries at session start, full text available):
+evaluate-before-implement, plan-before-code, test-per-bugfix, test-strategy, version-bump, changelog-update, context-management, session-discipline, observability, superpowers-workflow, future-scalability
 
 **4 profiles** for different project types (extensible):
 `_base` (always active), `mobile-app`, `web-api`, `cli-tool`

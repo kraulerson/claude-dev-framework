@@ -17,4 +17,4 @@ Use the project's native test framework. Check the manifest or project structure
 - Go: go test
 
 ### When This Rule Blocks
-The stop-checklist hook checks if the last commit looks like a bug fix (commit message contains fix/bug/patch/hotfix/repair/resolve) and blocks stopping if no test file was modified.
+The stop-checklist hook checks all commits made during the session for bug fix patterns (fix/bug/patch/hotfix/repair/resolve) and blocks stopping if any lack a corresponding test file.
