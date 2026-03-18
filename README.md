@@ -101,7 +101,7 @@ Profiles use YAML inheritance — all profiles inherit from `_base`, which provi
 
 ## Prerequisites
 
-- Bash 4+ (macOS ships with 3.2 — init.sh is compatible, but hooks require 4+)
+- Bash 3.2+
 - [jq](https://jqlang.github.io/jq/) — `brew install jq` (macOS) / `apt install jq` (Linux)
 - Git
 - [Claude Code](https://claude.com/claude-code)
@@ -147,6 +147,8 @@ After the initial build (v1.0.0), the framework was evaluated against two establ
 **[GSD](https://github.com/fredheir/get-shit-done) (Get Shit Done)** — Inspired the codebase mapping discovery question (understanding existing architecture before proposing changes) and reinforced the verify-after-complete pattern (walking the user through acceptance criteria after implementation).
 
 The following capabilities were evaluated from PAUL and GSD but **not adopted** because the framework already handles them differently: subagent orchestration (delegated to Superpowers), state tracking (manifest.json + markers), slash command delivery (git clone + bash), model switching (not a discipline concern), dynamic rule loading (hooks are mechanical), and quick mode (handled by the "trivial" skip mechanism).
+
+Both PAUL and GSD are excellent projects with active development and thoughtful design. If this framework's approach doesn't click for you, check them out — you may find that their workflow style resonates better with how you work.
 
 ## License
 
