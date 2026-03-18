@@ -4,6 +4,7 @@ set -euo pipefail
 
 FRAMEWORK_CLONE="$HOME/.claude-dev-framework"
 MANIFEST=".claude/manifest.json"
+source "$(dirname "$0")/_shared.sh"
 
 # Safety checks
 if [ ! -d ".claude/framework" ]; then
@@ -89,7 +90,24 @@ jq --arg fv "$FW_VER" --arg fc "$FW_COMMIT" --arg sd "$TODAY" \
   '.frameworkVersion = $fv | .frameworkCommit = $fc | .lastSyncDate = $sd' "$MANIFEST" > "${MANIFEST}.tmp"
 mv "${MANIFEST}.tmp" "$MANIFEST"
 
+# Regenerate settings.json hook registrations
+echo "Regenerating hook registrations..."
+ACTIVE_HOOKS=()
+while IFS= read -r h; do
+  [ -n "$h" ] && ACTIVE_HOOKS+=("$h")
+done <<< "$(jq -r '.activeHooks[]? // empty' "$MANIFEST" 2>/dev/null)"
+
+if [ ${#ACTIVE_HOOKS[@]} -gt 0 ]; then
+  SETTINGS=$(generate_settings_json "${ACTIVE_HOOKS[@]}")
+  if echo "$SETTINGS" | jq '.' >/dev/null 2>&1; then
+    merge_hooks_into_settings "$SETTINGS" ".claude/settings.json"
+  else
+    echo "  WARNING: Could not regenerate settings.json — hook registrations unchanged" >&2
+  fi
+fi
+
 echo ""
 echo "=== Sync Complete ==="
 echo "  Updated: $UPDATED | New: $NEW | Skipped: $SKIPPED | Conflicts: $CONFLICTS"
 echo "  Framework version: $FW_VER (commit: $FW_COMMIT)"
+echo "  Hook registrations: regenerated"

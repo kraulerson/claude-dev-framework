@@ -7,8 +7,8 @@ source "$SCRIPT_DIR/helpers/setup.sh"
 FRAMEWORK_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 test_generate_settings_quotes_paths() {
-  # Source generate_settings_json from init.sh
-  eval "$(sed -n '/^generate_settings_json/,/^}/p' "$FRAMEWORK_DIR/scripts/init.sh")"
+  # Source shared functions
+  source "$FRAMEWORK_DIR/scripts/_shared.sh"
 
   # Generate settings and extract all command values
   local output

@@ -88,53 +88,8 @@ parse_profile() {
   done
 }
 
-# ---- Helper: Generate settings.json from active hooks ----
-generate_settings_json() {
-  local prefix='"$CLAUDE_PROJECT_DIR/.claude/framework/hooks/'
-
-  # Build JSON entries for each hook, one per line, using jq for safe encoding
-  local entries=""
-  for hook in "$@"; do
-    local event="" matcher=""
-    case "$hook" in
-      session-start)        event="SessionStart"; matcher="" ;;
-      enforce-evaluate)     event="PreToolUse";   matcher="Bash" ;;
-      enforce-superpowers)  event="PreToolUse";   matcher="Write|Edit" ;;
-      pre-commit-checks)    event="PreToolUse";   matcher="Bash" ;;
-      branch-safety)        event="PreToolUse";   matcher="Bash" ;;
-      stop-checklist)       event="Stop";         matcher="" ;;
-      pre-compact-reminder) event="PreCompact";   matcher="" ;;
-      changelog-sync-check) event="PreToolUse";   matcher="Write|Edit" ;;
-      sync-tracker)         event="PostToolUse";  matcher="Bash" ;;
-      scalability-check)    event="PreToolUse";   matcher="Write|Edit" ;;
-      pre-deploy-check)    event="PreToolUse";   matcher="Bash" ;;
-      *) continue ;;
-    esac
-    entries="${entries}$(jq -n --arg e "$event" --arg m "$matcher" --arg c "${prefix}${hook}.sh\"" \
-      '{event:$e,matcher:$m,command:$c}')"$'\n'
-  done
-
-  # Let jq handle all grouping and JSON assembly
-  echo "$entries" | jq -s --arg prefix "$prefix" '
-    group_by(.event + "\u0000" + .matcher) |
-    map({
-      event: .[0].event,
-      matcher: .[0].matcher,
-      hooks: map({"type":"command","command":.command})
-    }) |
-    group_by(.event) |
-    map({
-      key: .[0].event,
-      value: map(
-        if .matcher != "" then {matcher: .matcher, hooks: .hooks}
-        else {hooks: .hooks}
-        end
-      )
-    }) |
-    from_entries |
-    {hooks: .}
-  '
-}
+# ---- Shared functions (generate_settings_json, merge_hooks_into_settings) ----
+source "$(dirname "$0")/_shared.sh"
 
 # ---- Helper: Discovery Interview ----
 run_discovery() {
@@ -365,15 +320,7 @@ if ! echo "$SETTINGS" | jq '.' >/dev/null 2>&1; then
   exit 1
 fi
 
-if [ -f ".claude/settings.json" ] && jq '.' .claude/settings.json >/dev/null 2>&1; then
-  # Merge: preserve existing keys, replace hooks
-  HOOKS_PART=$(echo "$SETTINGS" | jq '.hooks')
-  EXISTING=$(cat .claude/settings.json)
-  echo "$EXISTING" | jq --argjson h "$HOOKS_PART" '. + {hooks: $h}' > .claude/settings.json.tmp
-  mv .claude/settings.json.tmp .claude/settings.json
-else
-  echo "$SETTINGS" > .claude/settings.json
-fi
+merge_hooks_into_settings "$SETTINGS" ".claude/settings.json"
 
 # Phase 7: VERIFY
 echo ""
