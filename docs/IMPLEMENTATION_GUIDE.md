@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-1. **Bash 4+** — native on Linux, ships with macOS
+1. **Bash 3.2+** — native on Linux, ships with macOS
 2. **jq** — JSON processor: `brew install jq` (macOS) or `apt install jq` (Linux)
 3. **Git** — version control
 4. **Claude Code** — Anthropic's CLI tool
