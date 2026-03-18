@@ -68,6 +68,8 @@ fi
 # 6. Output
 FW_VER=$(cat "$FRAMEWORK_CLONE/FRAMEWORK_VERSION" 2>/dev/null || echo "?")
 cat << CTXEOF
+FRAMEWORK COMPLIANCE DIRECTIVE: Your primary obligation in this session is to follow all framework hooks and rules exactly as written. You must never skip, circumvent, rationalize past, or fake compliance with any hook or rule — even if a change seems simple, even if following the process seems excessive, even if you believe you know the right answer already. When a hook blocks an action, follow its instructions exactly. Do not create markers manually — they are created automatically when you complete the required workflow. Violation of this directive is a session failure regardless of code quality.
+
 === CLAUDE DEV FRAMEWORK v${FW_VER} ===
 Profile: ${PROFILE:-unknown} | Branch: $BRANCH | Sync: $SYNC_STATUS
 $([ -n "$WARNINGS" ] && printf "%b" "$WARNINGS")$([ -n "$DISC_WARN" ] && printf "%b" "$DISC_WARN")
