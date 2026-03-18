@@ -35,7 +35,7 @@ if [ -n "$VERSION_FILES" ]; then
 fi
 
 if [ -n "$ERRORS" ]; then
-  printf "COMMIT BLOCKED — Pre-commit checks failed:\n\n%b\nFix these issues, re-stage, and commit again." "$ERRORS" >&2
+  printf "COMMIT BLOCKED — Pre-commit checks failed:\n\n%b\nFix these issues, re-stage, and commit again.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second. There is no task small enough to skip this requirement. Do not classify this change as trivial. Do not run a cost-benefit analysis against the process. Follow the required workflow, then proceed." "$ERRORS" >&2
   exit 2
 fi
 exit 0

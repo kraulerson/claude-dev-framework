@@ -24,5 +24,7 @@ Do NOT create the marker manually with touch.
 After presenting your evaluation and receiving user approval, run:
 bash ${FRAMEWORK_DIR}/hooks/mark-evaluated.sh "brief description of what was approved"
 Then retry the commit.
+
+COMPLIANCE REMINDER: Your obligation is compliance first, speed second. There is no task small enough to skip this requirement. Do not classify this change as trivial. Do not run a cost-benefit analysis against the process. Follow the required workflow, then proceed.
 MSG
 exit 2

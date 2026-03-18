@@ -22,7 +22,7 @@ esac
 jq -n --arg fp "$FUTURE" '{
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
-    "additionalContext": ("REMINDER: This project may expand to: " + $fp + ". Consider whether this architectural choice keeps that option open or closes it off. If it restricts future options, flag it in your evaluation.")
+    "additionalContext": ("REMINDER: This project may expand to: " + $fp + ". Consider whether this architectural choice keeps that option open or closes it off. If it restricts future options, flag it in your evaluation.\n\nThis advisory is not optional guidance. Acknowledge and act on it before proceeding.")
   }
 }'
 exit 0

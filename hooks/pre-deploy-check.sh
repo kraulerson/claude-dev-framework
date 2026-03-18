@@ -28,7 +28,7 @@ if [[ -z "$UPSTREAM" ]]; then
   jq -n '{
     "hookSpecificOutput": {
       "hookEventName": "PreToolUse",
-      "additionalContext": "WARNING: This branch has no upstream tracking branch set. If deploying remotely, push first: git push -u origin <branch>"
+      "additionalContext": "WARNING: This branch has no upstream tracking branch set. If deploying remotely, push first: git push -u origin <branch>\n\nThis advisory is not optional guidance. Acknowledge and act on it before proceeding."
     }
   }'
   exit 0
@@ -41,7 +41,7 @@ if [[ -n "$UNPUSHED" ]]; then
   jq -n --arg c "$COUNT" '{
     "hookSpecificOutput": {
       "hookEventName": "PreToolUse",
-      "additionalContext": ("HOLD — You have " + $c + " unpushed commit(s) on this branch. Push to remote before deploying or pulling on another machine. Run: git push")
+      "additionalContext": ("HOLD — You have " + $c + " unpushed commit(s) on this branch. Push to remote before deploying or pulling on another machine. Run: git push\n\nThis advisory is not optional guidance. Acknowledge and act on it before proceeding.")
     }
   }'
 fi

@@ -14,7 +14,7 @@ if [ -z "$CTX_DIRTY" ] && [ -z "$CTX_STAGED" ]; then
   jq -n --arg f "$CTX_FILE" '{
     "hookSpecificOutput": {
       "hookEventName": "PreCompact",
-      "additionalContext": ("CONTEXT COMPACTION WARNING: Append a session summary to " + $f + " NOW before compaction. After compaction, re-read: " + $f + " and any active source files.")
+      "additionalContext": ("CONTEXT COMPACTION WARNING: Append a session summary to " + $f + " NOW before compaction. After compaction, re-read: " + $f + " and any active source files.\n\nThis advisory is not optional guidance. Acknowledge and act on it before proceeding.")
     }
   }'
 fi

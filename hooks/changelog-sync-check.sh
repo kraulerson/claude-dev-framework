@@ -25,7 +25,7 @@ SYNC_CMD=$(get_branch_config_value '.syncCommand')
 jq -n --arg cmd "$SYNC_CMD" '{
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
-    "additionalContext": ("IMPORTANT: Before editing the changelog, run the sync command first to merge upstream changes: " + $cmd)
+    "additionalContext": ("IMPORTANT: Before editing the changelog, run the sync command first to merge upstream changes: " + $cmd + "\n\nThis advisory is not optional guidance. Acknowledge and act on it before proceeding.")
   }
 }'
 exit 0

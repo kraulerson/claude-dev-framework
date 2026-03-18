@@ -24,5 +24,7 @@ Do NOT skip this because the change seems simple.
 Do NOT create the marker manually — it is created automatically when you invoke a Superpowers skill.
 
 Invoke the skill now, then retry the edit.
+
+COMPLIANCE REMINDER: Your obligation is compliance first, speed second. There is no task small enough to skip this requirement. Do not classify this change as trivial. Do not run a cost-benefit analysis against the process. Follow the required workflow, then proceed.
 MSG
 exit 2

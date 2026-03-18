@@ -13,7 +13,7 @@ BRANCH=$(get_branch)
 PROTECTED=$(get_manifest_array '.projectConfig._base.protectedBranches[]')
 for pb in $PROTECTED; do
   if [ "$BRANCH" = "$pb" ]; then
-    echo "PUSH BLOCKED — You are on protected branch '$BRANCH'. Direct pushes are not allowed." >&2
+    printf "PUSH BLOCKED — You are on protected branch '%s'. Direct pushes are not allowed.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second. There is no task small enough to skip this requirement. Do not classify this change as trivial. Do not run a cost-benefit analysis against the process. Follow the required workflow, then proceed." "$BRANCH" >&2
     exit 2
   fi
 done
@@ -25,7 +25,7 @@ if [ -n "$DEV_BRANCHES" ]; then
     [[ "$BRANCH" == $db ]] && { ALLOWED=true; break; }
   done
   if [ "$ALLOWED" = false ]; then
-    echo "PUSH BLOCKED — Branch '$BRANCH' is not in the allowed dev branches for this config. Allowed: $DEV_BRANCHES" >&2
+    printf "PUSH BLOCKED — Branch '%s' is not in the allowed dev branches for this config. Allowed: %s\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second. There is no task small enough to skip this requirement. Do not classify this change as trivial. Do not run a cost-benefit analysis against the process. Follow the required workflow, then proceed." "$BRANCH" "$DEV_BRANCHES" >&2
     exit 2
   fi
 fi
