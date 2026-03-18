@@ -140,11 +140,11 @@ This framework was built independently as an original architecture — the centr
 
 After the initial build (v1.0.0), the framework was evaluated against two established Claude Code workflow projects. Several workflow concepts were adopted where they filled genuine gaps:
 
-**[Superpowers](https://github.com/anthropics/claude-code) plugin** — The framework's enforcement layer is built around Superpowers. The brainstorming, planning, TDD, debugging, and code review skills are the workflow engine that hooks enforce. Superpowers is a required dependency, not an optional integration.
+**[Superpowers](https://github.com/obra/superpowers) plugin** — The framework's enforcement layer is built around Superpowers. The brainstorming, planning, TDD, debugging, and code review skills are the workflow engine that hooks enforce. Superpowers is a required dependency, not an optional integration.
 
-**[PAUL](https://github.com/cline/PAUL) (Plan-Apply-Unify Loop)** — Inspired the plan closure rule (documenting planned vs. actual outcomes after completing work), structured acceptance criteria in plans (BDD format), and the boundaries/do-not-touch convention for implementation plans.
+**[PAUL](https://github.com/ChristopherKahler/paul) (Plan-Apply-Unify Loop)** — Inspired the plan closure rule (documenting planned vs. actual outcomes after completing work), structured acceptance criteria in plans (BDD format), and the boundaries/do-not-touch convention for implementation plans.
 
-**[GSD](https://github.com/fredheir/get-shit-done) (Get Shit Done)** — Inspired the codebase mapping discovery question (understanding existing architecture before proposing changes) and reinforced the verify-after-complete pattern (walking the user through acceptance criteria after implementation).
+**[GSD](https://github.com/gsd-build/get-shit-done) (Get Shit Done)** — Inspired the codebase mapping discovery question (understanding existing architecture before proposing changes) and reinforced the verify-after-complete pattern (walking the user through acceptance criteria after implementation).
 
 The following capabilities were evaluated from PAUL and GSD but **not adopted** because the framework already handles them differently: subagent orchestration (delegated to Superpowers), state tracking (manifest.json + markers), slash command delivery (git clone + bash), model switching (not a discipline concern), dynamic rule loading (hooks are mechanical), and quick mode (handled by the "trivial" skip mechanism).
 
