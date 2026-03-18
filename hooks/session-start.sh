@@ -34,7 +34,7 @@ if [ -d "$FRAMEWORK_CLONE/.git" ]; then
   elif [ "$LOCAL" != "?" ] && [ "$REMOTE" != "?" ]; then
     BEHIND=$(git rev-list --count HEAD..origin/main 2>/dev/null || echo "?")
     SYNC_STATUS="$BEHIND behind"
-    WARNINGS="${WARNINGS}\n!! Framework $BEHIND commits behind. Run: cd ~/.claude-dev-framework && git pull !!"
+    WARNINGS="${WARNINGS}\n!! Framework $BEHIND commits behind. Run: cd ~/.claude-dev-framework && git pull && cd - && bash ~/.claude-dev-framework/scripts/sync.sh !!"
   fi
   popd > /dev/null
 fi
