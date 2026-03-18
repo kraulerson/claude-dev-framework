@@ -6,9 +6,24 @@ rules:
   - evaluate-before-implement
   - plan-before-code
   - test-per-bugfix
+  - test-strategy
   - context-management
   - session-discipline
   - superpowers-workflow
+
+discovery_questions:
+  - key: dataHandled
+    question: "What kind of data does this app handle?"
+    examples: "personal notes, financial data, health info, none — it's a utility tool"
+  - key: networkExposure
+    question: "Is this app exposed to the network or internet?"
+    examples: "local only, LAN only, internet-facing, app store distribution"
+  - key: authModel
+    question: "Does this app have authentication or user accounts?"
+    examples: "no users, single user, multi-user with auth, OAuth/SSO"
+  - key: apiIntegrations
+    question: "Does this app integrate with external APIs?"
+    examples: "none, AI APIs (Anthropic/OpenAI), payment processors, social media, internal only"
 
 hooks:
   - session-start
