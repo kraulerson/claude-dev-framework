@@ -14,10 +14,11 @@ if echo "$COMMAND" | grep -qE 'sync-(changelog|shared|ios)\.sh' && [ "$EXIT_CODE
   touch "/tmp/.claude_changelog_synced_${HASH}"
 fi
 
-# Clear evaluation/superpowers markers after successful commit
+# Clear evaluation/superpowers/skill_active markers after successful commit
 # so the next change in this session goes through the workflow again
 if echo "$COMMAND" | grep -qE '^\s*git\s+commit' && [ "$EXIT_CODE" = "0" ]; then
   rm -f "/tmp/.claude_evaluated_${HASH}"
   rm -f "/tmp/.claude_superpowers_${HASH}"
+  rm -f "/tmp/.claude_skill_active_${HASH}"
 fi
 exit 0

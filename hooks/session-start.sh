@@ -77,14 +77,18 @@ ACTIVE RULES:${RULES:-"  (none configured)"}
 MARKER INSTRUCTIONS (MANDATORY — you MUST follow these):
   After presenting an evaluation and getting user approval, run:
     touch /tmp/.claude_evaluated_${HASH}
-  After invoking a Superpowers skill (brainstorming, planning, TDD), run:
+  BEFORE invoking a Superpowers skill, run this to unlock source file reading:
+    touch /tmp/.claude_skill_active_${HASH}
+  After the Superpowers skill completes (brainstorming, planning, TDD), run:
     touch /tmp/.claude_superpowers_${HASH}
   After documenting plan closure (planned vs. actual, decisions, deferred), run:
     touch /tmp/.claude_plan_closed_${HASH}
   If the user says "skip evaluation" or "skip superpowers", run the
   corresponding touch command to create the marker.
-  These markers are checked by enforcement hooks. Without them, you will
-  receive advisory reminders before writing source files or committing.
+  IMPORTANT: Reading, writing, or editing source files is BLOCKED until
+  the superpowers marker exists. You cannot research source code before
+  brainstorming. The skill_active marker temporarily unlocks reads so
+  the brainstorming skill can explore the codebase.
 CTXEOF
 
 [ -n "$CTX" ] && printf "\n=== RECENT CONTEXT HISTORY ===\n%s\n=== END CONTEXT HISTORY ===" "$CTX"

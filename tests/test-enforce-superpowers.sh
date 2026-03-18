@@ -36,13 +36,23 @@ test_source_without_marker() {
   teardown_test_project
 }
 
-# --- Test: source file with marker passes ---
+# --- Test: source file with superpowers marker passes ---
 test_source_with_marker() {
   setup_test_project
   touch "/tmp/.claude_superpowers_${TEST_HASH}"
   INPUT='{"tool_input":{"file_path":"app.kt"}}'
   RESULT=$(run_hook "$HOOK" "$INPUT")
-  assert_equals "" "$RESULT" "source with marker should produce no output"
+  assert_equals "" "$RESULT" "source with superpowers marker should produce no output"
+  teardown_test_project
+}
+
+# --- Test: source file with skill_active marker passes (brainstorming in progress) ---
+test_source_with_skill_active_marker() {
+  setup_test_project
+  touch "/tmp/.claude_skill_active_${TEST_HASH}"
+  INPUT='{"tool_input":{"file_path":"app.kt"}}'
+  RESULT=$(run_hook "$HOOK" "$INPUT")
+  assert_equals "" "$RESULT" "source with skill_active marker should pass (brainstorming reads)"
   teardown_test_project
 }
 
@@ -52,4 +62,5 @@ test_doc_file_passes
 test_test_file_passes
 test_source_without_marker
 test_source_with_marker
+test_source_with_skill_active_marker
 run_tests

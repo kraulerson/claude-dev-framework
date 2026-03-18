@@ -44,6 +44,7 @@ teardown_test_project() {
   # Clean up any marker files this test created
   rm -f "/tmp/.claude_evaluated_${TEST_HASH}"
   rm -f "/tmp/.claude_superpowers_${TEST_HASH}"
+  rm -f "/tmp/.claude_skill_active_${TEST_HASH}"
   rm -f "/tmp/.claude_session_start_${TEST_HASH}"
   rm -f "/tmp/.claude_changelog_synced_${TEST_HASH}"
   rm -f "/tmp/.claude_plan_closed_${TEST_HASH}"

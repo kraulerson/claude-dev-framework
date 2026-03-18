@@ -51,6 +51,7 @@ Markers are temporary files in `/tmp/` that track workflow completion. They are 
 | Marker | Created when | Cleared when | Checked by |
 |--------|-------------|--------------|------------|
 | `.claude_evaluated_{hash}` | You present an evaluation and get user approval, then run `touch` | After successful `git commit` | `enforce-evaluate.sh` |
+| `.claude_skill_active_{hash}` | You run `touch` BEFORE invoking a Superpowers skill | After successful `git commit` | `enforce-superpowers.sh` |
 | `.claude_superpowers_{hash}` | You invoke a Superpowers skill, then run `touch` | After successful `git commit` | `enforce-superpowers.sh` |
 | `.claude_session_start_{hash}` | Session starts (automatic) | Session ends | `stop-checklist.sh` |
 | `.claude_changelog_synced_{hash}` | Sync script succeeds (automatic) | Not auto-cleared | `changelog-sync-check.sh` |
