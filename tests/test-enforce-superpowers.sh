@@ -32,7 +32,7 @@ test_source_without_marker() {
   EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
   assert_exit_code "2" "$EXIT_CODE" "should block with exit 2"
   assert_contains "$RESULT" "BLOCKED" "should say BLOCKED"
-  assert_contains "$RESULT" "Superpowers" "should mention Superpowers"
+  assert_contains "$RESULT" "Superpowers" "should mention Superpowers skill"
   teardown_test_project
 }
 
@@ -46,21 +46,10 @@ test_source_with_marker() {
   teardown_test_project
 }
 
-# --- Test: source file with skill_active marker passes (brainstorming in progress) ---
-test_source_with_skill_active_marker() {
-  setup_test_project
-  touch "/tmp/.claude_skill_active_${TEST_HASH}"
-  INPUT='{"tool_input":{"file_path":"app.kt"}}'
-  RESULT=$(run_hook "$HOOK" "$INPUT")
-  assert_equals "" "$RESULT" "source with skill_active marker should pass (brainstorming reads)"
-  teardown_test_project
-}
-
 # --- Run all tests ---
 echo "enforce-superpowers.sh"
 test_doc_file_passes
 test_test_file_passes
 test_source_without_marker
 test_source_with_marker
-test_source_with_skill_active_marker
 run_tests

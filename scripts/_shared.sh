@@ -15,7 +15,7 @@ generate_settings_json() {
     case "$hook" in
       session-start)        event="SessionStart"; matcher="" ;;
       enforce-evaluate)     event="PreToolUse";   matcher="Bash" ;;
-      enforce-superpowers)  event="PreToolUse";   matcher="Write|Edit|Read" ;;
+      enforce-superpowers)  event="PreToolUse";   matcher="Write|Edit" ;;
       pre-commit-checks)    event="PreToolUse";   matcher="Bash" ;;
       branch-safety)        event="PreToolUse";   matcher="Bash" ;;
       stop-checklist)       event="Stop";         matcher="" ;;

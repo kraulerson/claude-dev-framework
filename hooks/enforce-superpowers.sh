@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# enforce-superpowers.sh — PreToolUse (Write|Edit|Read) blocking hook
+# enforce-superpowers.sh — PreToolUse (Write|Edit) blocking hook
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/_helpers.sh" 2>/dev/null || exit 1
@@ -12,9 +12,18 @@ is_test_file "$FILE_PATH" && exit 0
 is_source_file "$FILE_PATH" || exit 0
 
 HASH=$(get_project_hash)
-# Allow if superpowers workflow completed OR brainstorming skill is active
 [ -f "/tmp/.claude_superpowers_${HASH}" ] && exit 0
-[ -f "/tmp/.claude_skill_active_${HASH}" ] && exit 0
 
-echo "BLOCKED — The Superpowers workflow (brainstorm → plan → implement) has not been invoked this session. You must brainstorm BEFORE reading source files for implementation. To begin: run 'touch /tmp/.claude_skill_active_${HASH}' then invoke the appropriate Superpowers skill. If the user has already said 'skip superpowers', create the marker instead: touch /tmp/.claude_superpowers_${HASH}" >&2
+cat >&2 << MSG
+BLOCKED — You MUST invoke a Superpowers skill before writing source files.
+
+DO NOT present an evaluation, propose an approach, or ask to proceed.
+DO NOT try to shortcut around this with text. That is not compliance.
+
+YOUR ONLY OPTIONS:
+  1. Invoke the Superpowers brainstorming skill now (use the Skill tool)
+  2. If the user has already said "skip superpowers", run: touch /tmp/.claude_superpowers_${HASH}
+
+This edit will not proceed until the marker exists.
+MSG
 exit 2
