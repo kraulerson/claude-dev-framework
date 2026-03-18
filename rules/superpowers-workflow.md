@@ -15,6 +15,5 @@ After invoking any Superpowers skill, create the marker:
 `touch /tmp/.claude_superpowers_{project_hash}`
 
 ### When to Skip
-- Trivial changes (typo fixes, config updates)
-- The user explicitly says "skip superpowers"
+- Only when the user explicitly says "skip superpowers" or "this is trivial". Claude must not decide on its own that a change is trivial enough to skip.
 - Test files (TDD writes tests first, before the Superpowers cycle)
