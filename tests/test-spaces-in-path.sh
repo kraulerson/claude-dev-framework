@@ -78,9 +78,9 @@ MANIFEST
   assert_exit_code "0" "$session_exit" "session-start should succeed with spaces in path"
   assert_contains "$session_output" "CLAUDE DEV FRAMEWORK" "session-start should show banner with spaced path"
 
-  # Test enforce-evaluate hook executes without error
+  # Test enforce-evaluate hook executes without error (non-commit command passes)
   local eval_output eval_exit
-  eval_output=$(cd "$TEST_DIR" && echo '{"tool_input":{"command":"git commit -m test"}}' | bash "$TEST_DIR/.claude/framework/hooks/enforce-evaluate.sh" 2>&1)
+  eval_output=$(cd "$TEST_DIR" && echo '{"tool_input":{"command":"git status"}}' | bash "$TEST_DIR/.claude/framework/hooks/enforce-evaluate.sh" 2>&1)
   eval_exit=$?
   assert_exit_code "0" "$eval_exit" "enforce-evaluate should succeed with spaces in path"
 

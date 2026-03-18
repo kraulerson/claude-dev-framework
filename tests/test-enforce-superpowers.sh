@@ -24,12 +24,14 @@ test_test_file_passes() {
   teardown_test_project
 }
 
-# --- Test: source file without marker produces advisory ---
+# --- Test: source file without marker blocks with exit 2 ---
 test_source_without_marker() {
   setup_test_project
   INPUT='{"tool_input":{"file_path":"app.kt"}}'
   RESULT=$(run_hook "$HOOK" "$INPUT")
-  assert_contains "$RESULT" "additionalContext" "should produce advisory"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "should block with exit 2"
+  assert_contains "$RESULT" "BLOCKED" "should say BLOCKED"
   assert_contains "$RESULT" "Superpowers" "should mention Superpowers"
   teardown_test_project
 }

@@ -25,20 +25,20 @@ test_full_session_lifecycle() {
   # Verify session start marker was created
   assert_file_exists "/tmp/.claude_session_start_${TEST_HASH}" "session start marker should exist"
 
-  # --- Phase 2: Enforce Evaluate Advisory (no marker) ---
+  # --- Phase 2: Enforce Evaluate Block (no marker) ---
   COMMIT_INPUT='{"tool_input":{"command":"git commit -m \"Add feature\""}}'
   EVAL_RESULT=$(run_hook "$HOOK_DIR/enforce-evaluate.sh" "$COMMIT_INPUT")
-  assert_contains "$EVAL_RESULT" "additionalContext" "enforce-evaluate should advise without marker"
+  assert_contains "$EVAL_RESULT" "BLOCKED" "enforce-evaluate should block without marker"
 
   # --- Phase 3: Create Marker, Retry ---
   touch "/tmp/.claude_evaluated_${TEST_HASH}"
   EVAL_RESULT2=$(run_hook "$HOOK_DIR/enforce-evaluate.sh" "$COMMIT_INPUT")
   assert_equals "" "$EVAL_RESULT2" "enforce-evaluate should pass with marker"
 
-  # --- Phase 4: Enforce Superpowers Advisory (no marker) ---
+  # --- Phase 4: Enforce Superpowers Block (no marker) ---
   WRITE_INPUT='{"tool_input":{"file_path":"app.kt"}}'
   SP_RESULT=$(run_hook "$HOOK_DIR/enforce-superpowers.sh" "$WRITE_INPUT")
-  assert_contains "$SP_RESULT" "Superpowers" "enforce-superpowers should advise without marker"
+  assert_contains "$SP_RESULT" "BLOCKED" "enforce-superpowers should block without marker"
 
   touch "/tmp/.claude_superpowers_${TEST_HASH}"
   SP_RESULT2=$(run_hook "$HOOK_DIR/enforce-superpowers.sh" "$WRITE_INPUT")

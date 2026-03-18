@@ -126,7 +126,7 @@ cd ~/your-project && bash ~/.claude-dev-framework/scripts/sync.sh
 
 ## Testing
 
-The framework tests itself with 69 automated assertions across 12 test files:
+The framework tests itself with 71 automated assertions across 12 test files:
 
 ```bash
 bash tests/run-tests.sh

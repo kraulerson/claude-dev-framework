@@ -18,13 +18,13 @@ When a session begins, `session-start.sh` fires and injects context into your co
 As you work, hooks fire at two points:
 
 **Before writing source files** (`PreToolUse: Write|Edit`):
-- `enforce-superpowers.sh` **advises** you if you haven't completed the Superpowers workflow (brainstorm/plan/implement). It does NOT block you — you can proceed, but the advisory reminds you to follow the process.
+- `enforce-superpowers.sh` **blocks** you from writing source files if you haven't completed the Superpowers workflow (brainstorm/plan/implement). Create the marker after invoking a Superpowers skill, or after the user confirms skipping.
 - `scalability-check.sh` **advises** you to consider future platform plans when editing architectural files.
 - `changelog-sync-check.sh` **advises** you to run the sync command before editing the changelog.
 
 **Before running bash commands** (`PreToolUse: Bash`):
-- `enforce-evaluate.sh` **advises** you if you attempt `git commit` without having completed the evaluate-before-implement workflow. It does NOT block the commit.
-- `pre-commit-checks.sh` **blocks** `git commit` if source files are staged but the changelog or version files are not. This is a hard block — the commit will fail.
+- `enforce-evaluate.sh` **blocks** `git commit` if you haven't completed the evaluate-before-implement workflow. Present an evaluation and get user approval first, then create the marker.
+- `pre-commit-checks.sh` **blocks** `git commit` if source files are staged but the changelog or version files are not.
 - `branch-safety.sh` **blocks** `git push` to protected branches.
 
 **After running bash commands** (`PostToolUse: Bash`):

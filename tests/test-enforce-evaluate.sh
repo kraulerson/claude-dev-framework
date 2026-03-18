@@ -15,12 +15,14 @@ test_non_commit_passthrough() {
   teardown_test_project
 }
 
-# --- Test: commit without marker produces advisory ---
+# --- Test: commit without marker blocks with exit 2 ---
 test_commit_without_marker() {
   setup_test_project
   INPUT='{"tool_input":{"command":"git commit -m \"Add feature\""}}'
   RESULT=$(run_hook "$HOOK" "$INPUT")
-  assert_contains "$RESULT" "additionalContext" "should produce advisory"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "should block with exit 2"
+  assert_contains "$RESULT" "BLOCKED" "should say BLOCKED"
   assert_contains "$RESULT" "evaluate-before-implement" "should mention the rule"
   teardown_test_project
 }
