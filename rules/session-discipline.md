@@ -13,3 +13,13 @@ After implementing a change, verify the build succeeds before moving to the next
 
 ### One Major Feature Per Session
 As a rule of thumb, tackle one major feature per session to avoid context degradation.
+
+### Session Handoff
+
+When ending a session with work in progress:
+- Document the current state: what was completed, what's pending, what's next
+- Include specific file paths and line numbers if mid-implementation
+- Note any decisions made during the session that aren't captured in code or commits
+- Save to the context history file so the next session can pick up cleanly
+
+A good handoff answers: "If I start a fresh session tomorrow, what do I need to know to continue this work without re-discovering anything?"

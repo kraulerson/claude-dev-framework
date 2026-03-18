@@ -61,5 +61,19 @@ fi
 if [ -n "$ERRORS" ]; then
   REASON=$(printf "Unfinished steps:\n\n%b\nComplete these, then finish." "$ERRORS")
   jq -n --arg r "$REASON" '{"decision": "block", "reason": $r}'
+  exit 0
+fi
+
+# Advisory: suggest session handoff if work was done and context history is configured
+if [ -n "$SESSION_START" ] && [ -n "$CTX_HISTORY" ]; then
+  SESSION_COMMITS=$(git log --oneline "${SESSION_START}..HEAD" 2>/dev/null | wc -l | xargs)
+  if [ "$SESSION_COMMITS" -gt 0 ]; then
+    jq -n --arg f "$CTX_HISTORY" --arg n "$SESSION_COMMITS" '{
+      "hookSpecificOutput": {
+        "hookEventName": "Stop",
+        "additionalContext": ("Session produced " + $n + " commit(s). Consider saving a handoff note to " + $f + " — what was completed, what is pending, and what comes next — so the next session can pick up cleanly.")
+      }
+    }'
+  fi
 fi
 exit 0
