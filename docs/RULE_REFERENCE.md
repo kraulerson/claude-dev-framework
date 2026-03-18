@@ -6,6 +6,7 @@
 | plan-before-code | Create implementation plan for changes touching 3+ files | enforce-superpowers.sh + Superpowers plugin | 1-2 file changes, user provided plan |
 | test-per-bugfix | Every bug fix must include a regression test | stop-checklist.sh | N/A — always required for bug fixes |
 | test-strategy | Assess testing/security needs based on project risk profile during planning | session-start.sh (context injection) | Project already has current TEST-STRATEGY.md |
+| naming-conventions | Follow established naming patterns and language-standard conventions | session-start.sh (context injection) | N/A — always applies |
 | version-bump | Bump version before committing source changes | pre-commit-checks.sh | Doc-only commits |
 | changelog-update | Update changelog alongside source commits | pre-commit-checks.sh | Doc-only commits |
 | context-management | Save context history before compression, reload after | pre-compact-reminder.sh + stop-checklist.sh | Short sessions |

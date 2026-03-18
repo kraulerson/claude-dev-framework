@@ -7,6 +7,7 @@ rules:
   - plan-before-code
   - test-per-bugfix
   - test-strategy
+  - naming-conventions
   - context-management
   - session-discipline
   - superpowers-workflow

@@ -84,9 +84,9 @@ bash ~/.claude-dev-framework/scripts/init.sh
 
 ## Rules
 
-**13 rules** injected as context at session start:
+**14 rules** injected as context at session start:
 
-evaluate-before-implement, plan-before-code, test-per-bugfix, test-strategy, verify-after-complete, plan-closure, version-bump, changelog-update, context-management, session-discipline, observability, superpowers-workflow, future-scalability
+evaluate-before-implement, plan-before-code, test-per-bugfix, test-strategy, naming-conventions, verify-after-complete, plan-closure, version-bump, changelog-update, context-management, session-discipline, observability, superpowers-workflow, future-scalability
 
 ## Profiles
 

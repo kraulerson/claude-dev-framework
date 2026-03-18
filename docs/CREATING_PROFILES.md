@@ -33,8 +33,8 @@ suggests:              # Optional — default config values
 ## Profile Inheritance
 
 All profiles inherit from `_base.yml`, which provides:
-- 9 universal rules (evaluate, plan, test-per-bugfix, test-strategy, context, session, superpowers, verify-after-complete, plan-closure)
-- 5 universal hooks (session-start, enforce-evaluate, enforce-superpowers, stop-checklist, pre-compact-reminder)
+- 10 universal rules (evaluate, plan, test-per-bugfix, test-strategy, naming-conventions, context, session, superpowers, verify-after-complete, plan-closure)
+- 7 universal hooks (session-start, enforce-evaluate, enforce-superpowers, stop-checklist, pre-compact-reminder, skill-tracker, marker-guard)
 
 Your profile adds project-type-specific rules and hooks on top.
 
