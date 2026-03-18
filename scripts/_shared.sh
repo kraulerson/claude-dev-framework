@@ -22,6 +22,7 @@ generate_settings_json() {
       pre-compact-reminder) event="PreCompact";   matcher="" ;;
       changelog-sync-check) event="PreToolUse";   matcher="Write|Edit" ;;
       sync-tracker)         event="PostToolUse";  matcher="Bash" ;;
+      skill-tracker)        event="PostToolUse";  matcher="" ;;
       scalability-check)    event="PreToolUse";   matcher="Write|Edit" ;;
       pre-deploy-check)     event="PreToolUse";   matcher="Bash" ;;
       *) continue ;;

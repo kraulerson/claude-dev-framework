@@ -19,7 +19,7 @@ Do NOT commit and explain afterward.
 Do NOT assume the user approves because they asked for the change.
 Do NOT skip this because the change seems simple.
 
-After the user approves your evaluation, run: touch /tmp/.claude_evaluated_${HASH}
+Present your evaluation now. After the user approves, run: touch /tmp/.claude_evaluated_${HASH}
 Then retry the commit.
 MSG
 exit 2

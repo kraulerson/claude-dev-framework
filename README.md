@@ -64,7 +64,7 @@ bash ~/.claude-dev-framework/scripts/init.sh
 
 ## Hooks
 
-**11 hooks** enforce rules mechanically via Claude Code's hook API:
+**12 hooks** enforce rules mechanically via Claude Code's hook API:
 
 | Hook | Type | What it does |
 |------|------|-------------|
@@ -78,7 +78,8 @@ bash ~/.claude-dev-framework/scripts/init.sh
 | **changelog-sync-check** | Advisory | Warns before editing stale changelogs |
 | **scalability-check** | Advisory | Reminds about future platform plans when editing architecture |
 | **pre-deploy-check** | Advisory | Warns before deployment commands if commits are unpushed |
-| **sync-tracker** | Passive | Tracks sync operations and clears markers after commits |
+| **skill-tracker** | Passive | Creates superpowers marker automatically when a Superpowers skill is invoked |
+| **sync-tracker** | Passive | Tracks sync operations, clears markers after commits, detects marker forgery |
 
 ## Rules
 

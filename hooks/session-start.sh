@@ -74,19 +74,20 @@ $([ -n "$WARNINGS" ] && printf "%b" "$WARNINGS")$([ -n "$DISC_WARN" ] && printf 
 
 ACTIVE RULES:${RULES:-"  (none configured)"}
 
-MARKER INSTRUCTIONS (MANDATORY — you MUST follow these):
-  After presenting an evaluation and getting user approval, run:
+WORKFLOW ENFORCEMENT (enforced by hooks — you cannot bypass these):
+  SUPERPOWERS: Writing or editing source files is BLOCKED until you
+  invoke a Superpowers skill (brainstorming, planning, TDD, debugging).
+  The marker is created automatically when you invoke the skill.
+  When blocked, invoke the skill immediately — do not present
+  evaluations or propose approaches as a substitute.
+  Do NOT manually create the superpowers marker — forgery is detected.
+  EVALUATION: Committing is BLOCKED until you present an evaluation
+  and the user explicitly approves. After user approval, run:
     touch /tmp/.claude_evaluated_${HASH}
-  After invoking a Superpowers skill (brainstorming, planning, TDD), run:
-    touch /tmp/.claude_superpowers_${HASH}
-  After documenting plan closure (planned vs. actual, decisions, deferred), run:
-    touch /tmp/.claude_plan_closed_${HASH}
-  If the user says "skip evaluation" or "skip superpowers", run the
-  corresponding touch command to create the marker.
-  IMPORTANT: Writing or editing source files is BLOCKED until the
-  superpowers marker exists. When blocked, invoke the Superpowers
-  brainstorming skill immediately — do not present evaluations or
-  propose approaches as a substitute.
+  PLAN CLOSURE: After completing Superpowers-planned work, document
+  the outcome: touch /tmp/.claude_plan_closed_${HASH}
+  SKIP: If the user says "skip evaluation" or "skip superpowers",
+  that counts as approval and you may create the corresponding marker.
 CTXEOF
 
 [ -n "$CTX" ] && printf "\n=== RECENT CONTEXT HISTORY ===\n%s\n=== END CONTEXT HISTORY ===" "$CTX"

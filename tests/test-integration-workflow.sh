@@ -20,7 +20,7 @@ test_full_session_lifecycle() {
   # --- Phase 1: Session Start ---
   SESSION_OUTPUT=$(cd "$TEST_DIR" && bash "$HOOK_DIR/session-start.sh" 2>&1)
   assert_contains "$SESSION_OUTPUT" "CLAUDE DEV FRAMEWORK" "session-start should show banner"
-  assert_contains "$SESSION_OUTPUT" "MARKER INSTRUCTIONS" "session-start should show marker instructions"
+  assert_contains "$SESSION_OUTPUT" "WORKFLOW ENFORCEMENT" "session-start should show workflow enforcement"
 
   # Verify session start marker was created
   assert_file_exists "/tmp/.claude_session_start_${TEST_HASH}" "session start marker should exist"

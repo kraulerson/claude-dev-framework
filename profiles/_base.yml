@@ -36,6 +36,7 @@ hooks:
   - enforce-superpowers
   - stop-checklist
   - pre-compact-reminder
+  - skill-tracker
 
 suggests:
   sourceExtensions: [

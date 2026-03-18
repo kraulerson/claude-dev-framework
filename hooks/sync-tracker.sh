@@ -9,6 +9,13 @@ COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || ec
 EXIT_CODE=$(echo "$INPUT" | jq -r '.tool_response.exit_code // "1"' 2>/dev/null || echo "1")
 HASH=$(get_project_hash)
 
+# Forgery detection: superpowers marker must be created by skill-tracker, not manually
+if echo "$COMMAND" | grep -qE 'touch.*/tmp/\.claude_superpowers_'; then
+  rm -f "/tmp/.claude_superpowers_${HASH}"
+  echo "WARNING: Manual superpowers marker creation detected and reverted. This marker is created automatically when you invoke a Superpowers skill. Do not use touch." >&2
+  exit 0
+fi
+
 # Track successful sync script executions
 if echo "$COMMAND" | grep -qE 'sync-(changelog|shared|ios)\.sh' && [ "$EXIT_CODE" = "0" ]; then
   touch "/tmp/.claude_changelog_synced_${HASH}"
