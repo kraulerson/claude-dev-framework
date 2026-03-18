@@ -6,6 +6,9 @@ source "$SCRIPT_DIR/_helpers.sh"
 
 HASH=$(get_project_hash)
 BRANCH=$(get_branch)
+
+# Record session start commit for stop-checklist multi-commit detection
+git rev-parse HEAD > "/tmp/.claude_session_start_${HASH}" 2>/dev/null || true
 PROFILE=$(get_manifest_value '.profile')
 FRAMEWORK_DIR="$(get_framework_dir)"
 FRAMEWORK_CLONE="$HOME/.claude-dev-framework"

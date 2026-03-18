@@ -28,13 +28,22 @@ if [ "$HAS_SOURCE" = true ]; then
   ERRORS="${ERRORS}- Uncommitted source changes. Commit before finishing.\n"
 fi
 
-if [ "$HAS_SOURCE" = false ] && [ -z "$STAGED" ]; then
-  LAST_MSG=$(git log -1 --pretty=%B 2>/dev/null || true)
-  if echo "$LAST_MSG" | grep -qiE '\b(fix|bug|patch|hotfix|repair|resolve)\b'; then
-    LAST_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || true)
-    HAS_TEST=false
-    for f in $LAST_FILES; do is_test_file "$f" && { HAS_TEST=true; break; }; done
-    [ "$HAS_TEST" = false ] && ERRORS="${ERRORS}- Last commit looks like a bug fix but has NO regression test.\n"
+# Check ALL session commits for untested bug fixes (not just the last one)
+HASH=$(get_project_hash)
+SESSION_START=$(cat "/tmp/.claude_session_start_${HASH}" 2>/dev/null || echo "")
+if [ "$HAS_SOURCE" = false ] && [ -z "$STAGED" ] && [ -n "$SESSION_START" ]; then
+  UNTESTED_FIXES=""
+  while IFS=' ' read -r sha msg; do
+    [ -z "$sha" ] && continue
+    if echo "$msg" | grep -qiE '\b(fix|bug|patch|hotfix|repair|resolve)\b'; then
+      COMMIT_FILES=$(git diff --name-only "${sha}~1" "$sha" 2>/dev/null || true)
+      HAS_TEST=false
+      for f in $COMMIT_FILES; do is_test_file "$f" && { HAS_TEST=true; break; }; done
+      [ "$HAS_TEST" = false ] && UNTESTED_FIXES="${UNTESTED_FIXES}${sha:0:8}\n"
+    fi
+  done <<< "$(git log --format='%H %s' "${SESSION_START}..HEAD" 2>/dev/null || true)"
+  if [ -n "$UNTESTED_FIXES" ]; then
+    ERRORS="${ERRORS}- One or more commits look like a bug fix but have NO regression test.\n"
   fi
 fi
 
