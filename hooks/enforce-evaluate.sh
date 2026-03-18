@@ -11,15 +11,18 @@ echo "$COMMAND" | grep -qE '^\s*git\s+commit' || exit 0
 HASH=$(get_project_hash)
 [ -f "/tmp/.claude_evaluated_${HASH}" ] && exit 0
 
-cat >&2 << 'MSG'
+FRAMEWORK_DIR=$(get_framework_dir)
+cat >&2 << MSG
 BLOCKED — Commit requires evaluate-before-implement workflow.
 
 You MUST present an evaluation (pros, cons, alternatives) and get user approval before committing.
 Do NOT commit and explain afterward.
 Do NOT assume the user approves because they asked for the change.
 Do NOT skip this because the change seems simple.
-Do NOT create the marker manually — it is created automatically by the framework.
+Do NOT create the marker manually with touch.
 
-Present your evaluation now, get user approval, then retry the commit.
+After presenting your evaluation and receiving user approval, run:
+bash ${FRAMEWORK_DIR}/hooks/mark-evaluated.sh "brief description of what was approved"
+Then retry the commit.
 MSG
 exit 2

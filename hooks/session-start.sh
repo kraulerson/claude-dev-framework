@@ -83,8 +83,8 @@ WORKFLOW ENFORCEMENT (enforced by hooks — you cannot bypass these):
   When blocked, invoke the skill immediately — do not present
   evaluations or propose approaches as a substitute.
   EVALUATION: Committing is BLOCKED until you present an evaluation
-  and the user explicitly approves. The marker is created automatically
-  when the framework detects workflow completion.
+  and the user explicitly approves. After approval, run:
+    bash ${FRAMEWORK_DIR}/hooks/mark-evaluated.sh "description of what was approved"
   PLAN CLOSURE: After completing Superpowers-planned work, document
   the outcome (planned vs. actual, decisions made, issues deferred).
   SKIP: Only when the user explicitly says "skip evaluation" or
