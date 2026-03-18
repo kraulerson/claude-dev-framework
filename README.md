@@ -1,8 +1,10 @@
 # Claude Dev Framework
 
-A universal development discipline enforcement framework for [Claude Code](https://claude.com/claude-code). Built to solve a real problem: Claude is brilliant at writing code but forgets its own discipline during long sessions. Without mechanical enforcement, evaluation gets skipped, tests get forgotten, changelogs go stale, and deployment commands run before code is pushed.
+A universal development discipline enforcement framework for [Claude Code](https://claude.com/claude-code). Built to solve a real problem: Claude is brilliant at writing code but will skip its own discipline whenever it decides a task is "simple enough." Without mechanical enforcement, evaluation gets skipped, tests get forgotten, changelogs go stale, and deployment commands run before code is pushed.
 
-This framework fixes that. It uses Claude Code's hook API to mechanically enforce development rules — not through prompts that Claude can rationalize away, but through hooks that fire automatically at the right moments. Advisory hooks remind Claude to follow the workflow. Blocking hooks hard-stop actions that would violate project requirements. The result is consistent, disciplined development across every session, every project, every machine.
+This framework fixes that — but getting here required solving a deeper problem first. Claude has an internal priority stack: **speed → user satisfaction → compliance**. It classifies tasks as "trivial" or "complex" *before* checking rules, then rationalizes past any rule it considers unnecessary for "trivial" tasks. Early versions of this framework used advisory hooks (context injection), which Claude ignored. We then switched to blocking hooks (exit 2), which Claude bypassed by forging workflow markers. We removed the marker commands from messages, and Claude found them in rule files. We blocked the touch commands, and Claude presented text evaluations as substitutes for the required brainstorming skill.
+
+The current version uses an **8-layer defense-in-depth model** (inspired by the [Swiss cheese model](https://en.wikipedia.org/wiki/Swiss_cheese_model)) where each layer covers the holes in the others. No single layer is sufficient — Claude can rationalize past any individual barrier — but the combination makes bypass significantly harder. The full analysis of Claude's behavioral model and how each layer targets a specific bypass pattern is documented in **[Compliance Engineering](docs/COMPLIANCE_ENGINEERING.md)**. If you're building enforcement for AI agents and hitting similar compliance failures, start there.
 
 ## What Makes This Framework Different
 
@@ -12,7 +14,7 @@ The framework was designed from the ground up around three principles that disti
 
 **2. Discovery-driven, not one-size-fits-all.** The framework interviews you about your project — what data it handles, how it's deployed, what platforms it targets, what APIs it uses — and tailors its testing strategy, security assessment, and enforcement to your actual risk profile. A locally-hosted utility tool gets basic functional tests. A mobile app with user accounts, payment processing, and app store distribution gets encrypted storage, auth flow testing, and compliance checks.
 
-**3. Mechanical enforcement via hooks, not prompt engineering.** Rules are not suggestions injected into a system prompt. They are bash scripts that intercept Claude Code actions at specific lifecycle points — before writing source files, before committing, before pushing, before compaction, at session end. Advisory hooks inject context. Blocking hooks return exit code 2. Claude cannot skip them.
+**3. Layered mechanical enforcement, not prompt engineering.** Rules are not suggestions injected into a system prompt. They are bash scripts that intercept Claude Code actions at specific lifecycle points — before writing source files, before committing, before pushing, before compaction, at session end. Blocking hooks return exit code 2. Workflow markers are created automatically by the framework (not by Claude) when required skills are invoked. Manual marker creation is intercepted and blocked. Compliance directives are reinforced at every enforcement point, not just session start. See [Compliance Engineering](docs/COMPLIANCE_ENGINEERING.md) for the full defense model.
 
 ## The Development Workflow
 
@@ -69,8 +71,8 @@ bash ~/.claude-dev-framework/scripts/init.sh
 | Hook | Type | What it does |
 |------|------|-------------|
 | **session-start** | Context | Loads all rules, injects marker instructions, checks framework freshness |
-| **enforce-evaluate** | Advisory | Advises before committing without presenting evaluation |
-| **enforce-superpowers** | Advisory | Advises before writing source files without Superpowers workflow |
+| **enforce-evaluate** | Blocking | Blocks commits without presenting evaluation and getting user approval |
+| **enforce-superpowers** | Blocking | Blocks source file edits without invoking the Superpowers workflow |
 | **pre-commit-checks** | Blocking | Blocks commits missing version bumps or changelog updates |
 | **branch-safety** | Blocking | Blocks pushes to protected branches |
 | **stop-checklist** | Blocking | Blocks session end with uncommitted work, untested bug fixes, or missing plan closure |
@@ -117,6 +119,7 @@ Profiles use YAML inheritance — all profiles inherit from `_base`, which provi
 - [Creating Profiles](docs/CREATING_PROFILES.md) — how to add project types
 - [Glossary](docs/GLOSSARY.md) — canonical terminology
 - [Claude Guide](docs/CLAUDE-GUIDE.md) — how the framework works from Claude's perspective
+- [Compliance Engineering](docs/COMPLIANCE_ENGINEERING.md) — Claude's behavioral model and the 8-layer defense design
 - [Contributing](docs/CONTRIBUTING.md) — bash coding conventions
 
 ## Updating
