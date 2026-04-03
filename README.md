@@ -4,7 +4,7 @@ A universal development discipline enforcement framework for [Claude Code](https
 
 This framework fixes that — but getting here required solving a deeper problem first. Claude has an internal priority stack: **speed → user satisfaction → compliance**. It classifies tasks as "trivial" or "complex" *before* checking rules, then rationalizes past any rule it considers unnecessary for "trivial" tasks. Early versions of this framework used advisory hooks (context injection), which Claude ignored. We then switched to blocking hooks (exit 2), which Claude bypassed by forging workflow markers. We removed the marker commands from messages, and Claude found them in rule files. We blocked the touch commands, and Claude presented text evaluations as substitutes for the required brainstorming skill.
 
-The current version uses an **8-layer defense-in-depth model** (inspired by the [Swiss cheese model](https://en.wikipedia.org/wiki/Swiss_cheese_model)) where each layer covers the holes in the others. No single layer is sufficient — Claude can rationalize past any individual barrier — but the combination makes bypass significantly harder. The full analysis of Claude's behavioral model and how each layer targets a specific bypass pattern is documented in **[Compliance Engineering](docs/COMPLIANCE_ENGINEERING.md)**. If you're building enforcement for AI agents and hitting similar compliance failures, start there.
+The current version (v4.0.0) organizes enforcement into **5 enforcement zones** (Discovery, Design, Planning, Implementation, Verification) built on an **8-layer defense-in-depth model** (inspired by the [Swiss cheese model](https://en.wikipedia.org/wiki/Swiss_cheese_model)). Each zone gates a workflow stage — from requiring Superpowers skills before editing, to enforcing plan-task tracking, to blocking code using unresearched libraries via [Context7](https://context7.com/) MCP, to running configurable pre-commit verification gates. The full analysis of Claude's behavioral model and how each layer targets a specific bypass pattern is documented in **[Compliance Engineering](docs/COMPLIANCE_ENGINEERING.md)**. If you're building enforcement for AI agents and hitting similar compliance failures, start there.
 
 ## What Makes This Framework Different
 
@@ -97,21 +97,26 @@ The `--prepopulate` flag accepts a JSON file with the same structure as the disc
 
 **18 hooks** enforce rules mechanically via Claude Code's hook API:
 
-| Hook | Type | What it does |
-|------|------|-------------|
-| **session-start** | Context | Loads all rules, injects marker instructions, checks framework freshness |
-| **enforce-evaluate** | Blocking | Blocks commits without presenting evaluation and getting user approval |
-| **enforce-superpowers** | Blocking | Blocks source file edits without invoking the Superpowers workflow |
-| **pre-commit-checks** | Blocking | Blocks commits missing version bumps or changelog updates |
-| **branch-safety** | Blocking | Blocks pushes to protected branches |
-| **stop-checklist** | Blocking | Blocks session end with uncommitted work, untested bug fixes, or missing plan closure |
-| **pre-compact-reminder** | Advisory | Warns to save context history before compression |
-| **changelog-sync-check** | Advisory | Warns before editing stale changelogs |
-| **scalability-check** | Advisory | Reminds about future platform plans when editing architecture |
-| **pre-deploy-check** | Advisory | Warns before deployment commands if commits are unpushed |
-| **marker-guard** | Blocking | Prevents manual creation of workflow markers via touch commands |
-| **skill-tracker** | Passive | Creates superpowers marker automatically when a Superpowers skill is invoked |
-| **sync-tracker** | Passive | Tracks sync operations, clears markers after commits, detects marker forgery |
+| Hook | Zone | Type | What it does |
+|------|------|------|-------------|
+| **session-start** | Discovery | Context | Activates enforcement zones, checks dependencies, outputs terse zone report |
+| **enforce-superpowers** | Design | Blocking | Blocks source file edits without invoking the Superpowers workflow |
+| **skill-tracker** | Design | Passive | Creates superpowers/has_plan markers when Superpowers skills are invoked |
+| **enforce-plan-tracking** | Planning | Blocking | Blocks source edits until a plan task is marked in_progress |
+| **plan-tracker** | Planning | Passive | Creates/clears plan_active marker on TaskUpdate calls |
+| **enforce-context7** | Implementation | Blocking | Blocks edits using unresearched third-party libraries (Context7 MCP) |
+| **context7-tracker** | Implementation | Passive | Creates per-library markers when Context7 MCP is queried |
+| **enforce-evaluate** | Verification | Blocking | Blocks commits without presenting evaluation and getting user approval |
+| **pre-commit-checks** | Verification | Blocking | Blocks commits missing version bumps or changelog updates |
+| **verification-gate** | Verification | Blocking | Runs configurable pre-commit quality gates (linter, type-check, visual auditor) |
+| **branch-safety** | Verification | Blocking | Blocks pushes to protected branches |
+| **stop-checklist** | — | Blocking | Blocks session end with uncommitted work, untested bug fixes, or missing plan closure |
+| **marker-guard** | — | Blocking | Prevents manual creation of workflow markers via touch commands |
+| **sync-tracker** | — | Passive | Clears markers after commits, tracks sync operations |
+| **pre-compact-reminder** | — | Advisory | Warns to save context history before compression |
+| **changelog-sync-check** | — | Advisory | Warns before editing stale changelogs |
+| **scalability-check** | — | Advisory | Reminds about future platform plans when editing architecture |
+| **pre-deploy-check** | — | Advisory | Warns before deployment commands if commits are unpushed |
 
 ## Rules
 
@@ -137,8 +142,10 @@ Profiles use YAML inheritance — all profiles inherit from `_base`, which provi
 - Bash 3.2+
 - [jq](https://jqlang.github.io/jq/) — `brew install jq` (macOS) / `apt install jq` (Linux)
 - Git
+- [Node.js](https://nodejs.org/) — required for Context7 MCP
 - [Claude Code](https://claude.com/claude-code)
 - [Superpowers plugin](https://github.com/obra/superpowers) — install via `/plugins` in Claude Code
+- [Context7 MCP](https://context7.com/) — `claude mcp add context7 -- npx -y @upstash/context7-mcp@latest` (init.sh offers to install)
 
 ## Documentation
 
@@ -148,7 +155,7 @@ Profiles use YAML inheritance — all profiles inherit from `_base`, which provi
 - [Creating Profiles](docs/CREATING_PROFILES.md) — how to add project types
 - [Glossary](docs/GLOSSARY.md) — canonical terminology
 - [Claude Guide](docs/CLAUDE-GUIDE.md) — how the framework works from Claude's perspective
-- [Compliance Engineering](docs/COMPLIANCE_ENGINEERING.md) — Claude's behavioral model and the 8-layer defense design
+- [Compliance Engineering](docs/COMPLIANCE_ENGINEERING.md) — Claude's behavioral model, 8-layer defense design, and enforcement zones
 - [Contributing](docs/CONTRIBUTING.md) — bash coding conventions
 
 ## Updating
@@ -158,9 +165,18 @@ cd ~/.claude-dev-framework && git pull
 cd ~/your-project && bash ~/.claude-dev-framework/scripts/sync.sh
 ```
 
+### Migrating from v3 to v4
+
+```bash
+cd ~/.claude-dev-framework && git pull
+cd ~/your-project && bash ~/.claude-dev-framework/migrations/v4.sh
+```
+
+This copies new hooks, updates the manifest, regenerates settings.json, and offers to install Context7 MCP.
+
 ## Testing
 
-The framework tests itself with 159+ automated assertions across 22+ test files:
+The framework tests itself with 199+ automated assertions across 23 test files:
 
 ```bash
 bash tests/run-tests.sh
