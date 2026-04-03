@@ -64,9 +64,38 @@ cd ~/your-project
 bash ~/.claude-dev-framework/scripts/init.sh
 ```
 
+## Programmatic Setup
+
+For tools that install the framework as a dependency (e.g., project scaffolders, orchestrators):
+
+```bash
+# Create a discovery JSON file with your project context
+cat > .claude/discovery-prepopulated.json << 'EOF'
+{
+  "branch:main": {
+    "purpose": "main development branch",
+    "devOS": "Darwin",
+    "targetPlatform": "web",
+    "buildTools": "typescript"
+  },
+  "futurePlatforms": null,
+  "discoveryDate": "2026-04-03",
+  "lastReviewDate": "2026-04-03"
+}
+EOF
+
+# Run init with pre-populated discovery (skips interactive interview)
+bash ~/.claude-dev-framework/scripts/init.sh --prepopulate .claude/discovery-prepopulated.json
+
+# If your tool handles dependency installation itself:
+bash ~/.claude-dev-framework/scripts/init.sh --skip-plugin-check --prepopulate .claude/discovery-prepopulated.json
+```
+
+The `--prepopulate` flag accepts a JSON file with the same structure as the discovery interview output. The file must contain at least one `branch:*` key. If the file is missing, invalid, or lacks a branch key, init.sh falls back to the interactive interview with a warning.
+
 ## Hooks
 
-**13 hooks** enforce rules mechanically via Claude Code's hook API:
+**18 hooks** enforce rules mechanically via Claude Code's hook API:
 
 | Hook | Type | What it does |
 |------|------|-------------|
@@ -131,7 +160,7 @@ cd ~/your-project && bash ~/.claude-dev-framework/scripts/sync.sh
 
 ## Testing
 
-The framework tests itself with 71 automated assertions across 12 test files:
+The framework tests itself with 159+ automated assertions across 22+ test files:
 
 ```bash
 bash tests/run-tests.sh
