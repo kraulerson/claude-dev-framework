@@ -12,7 +12,8 @@
   "projectConfig": {
     "_base": {
       "sourceExtensions": [".py", ".js", ".ts", ".go", ".rs", ".java", ".kt", ".swift"],
-      "protectedBranches": ["main"]
+      "protectedBranches": ["main"],
+      "verificationGates": []
     },
     "branches": []
   },

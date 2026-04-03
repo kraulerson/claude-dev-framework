@@ -45,3 +45,8 @@ discovery_questions:
 suggests:
   changelogFile: "CHANGELOG.md"
   protectedBranches: ["main", "master"]
+  verificationGates:
+    - name: visual-auditor
+      command: ".claude/framework/gates/visual-auditor.sh"
+      failOn: exit_code
+      enabled: true

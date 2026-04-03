@@ -16,13 +16,17 @@
         "hooks": [
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/enforce-evaluate.sh" },
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/pre-commit-checks.sh" },
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/branch-safety.sh" }
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/branch-safety.sh" },
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/marker-guard.sh" },
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/verification-gate.sh" }
         ]
       },
       {
         "matcher": "Write|Edit",
         "hooks": [
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/enforce-superpowers.sh" },
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/enforce-plan-tracking.sh" },
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/enforce-context7.sh" },
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/changelog-sync-check.sh" },
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/scalability-check.sh" }
         ]
@@ -33,6 +37,13 @@
         "matcher": "Bash",
         "hooks": [
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/sync-tracker.sh" }
+        ]
+      },
+      {
+        "hooks": [
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/skill-tracker.sh" },
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/plan-tracker.sh" },
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/context7-tracker.sh" }
         ]
       }
     ],

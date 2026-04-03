@@ -39,6 +39,11 @@ hooks:
   - pre-compact-reminder
   - skill-tracker
   - marker-guard
+  - enforce-plan-tracking
+  - plan-tracker
+  - enforce-context7
+  - context7-tracker
+  - verification-gate
 
 suggests:
   sourceExtensions: [
