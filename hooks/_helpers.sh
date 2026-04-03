@@ -134,3 +134,11 @@ validate_file_path() {
   esac
   return 0
 }
+
+check_context7() {
+  # Check if Context7 MCP server is registered in Claude Code
+  local settings="$HOME/.claude/settings.json"
+  [ ! -f "$settings" ] && return 1
+  check_jq || return 1
+  jq -e '.mcpServers.context7 // .mcpServers["context7-mcp"] // empty' "$settings" >/dev/null 2>&1
+}
