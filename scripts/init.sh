@@ -267,9 +267,24 @@ TODAY=$(date +%Y-%m-%dT%H:%M:%SZ)
 RULES_JSON=$(printf '%s\n' "${ALL_RULES[@]}" | jq -R . | jq -s '.')
 HOOKS_JSON=$(printf '%s\n' "${ALL_HOOKS[@]}" | jq -R . | jq -s '.')
 
-# Run discovery if clean setup or reconfigure
+# Run discovery — prepopulate takes priority over interactive interview
 DISCOVERY_JSON="{}"
-if [ "$HAS_EXISTING" = false ] || [ "$RECONFIGURE" = true ]; then
+if [ -n "$PREPOPULATE_FILE" ]; then
+  if [ ! -f "$PREPOPULATE_FILE" ]; then
+    echo "WARNING: Prepopulate file not found: $PREPOPULATE_FILE. Falling back to interview." >&2
+  elif ! jq '.' "$PREPOPULATE_FILE" >/dev/null 2>&1; then
+    echo "WARNING: Prepopulate file is not valid JSON: $PREPOPULATE_FILE. Falling back to interview." >&2
+  elif ! jq -e 'keys[] | select(startswith("branch:"))' "$PREPOPULATE_FILE" >/dev/null 2>&1; then
+    echo "WARNING: Prepopulate file has no branch:* keys: $PREPOPULATE_FILE. Falling back to interview." >&2
+  else
+    DISCOVERY_JSON=$(cat "$PREPOPULATE_FILE")
+    echo "Using pre-populated discovery from $PREPOPULATE_FILE" >&2
+  fi
+  # If validation failed, DISCOVERY_JSON is still "{}" — fall back to interview
+  if [ "$DISCOVERY_JSON" = "{}" ]; then
+    DISCOVERY_JSON=$(run_discovery)
+  fi
+elif [ "$HAS_EXISTING" = false ] || [ "$RECONFIGURE" = true ]; then
   DISCOVERY_JSON=$(run_discovery)
 fi
 
