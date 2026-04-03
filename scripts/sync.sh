@@ -33,6 +33,23 @@ fi
 UPDATED=0; SKIPPED=0; NEW=0; CONFLICTS=0
 echo ""
 echo "Syncing hooks..."
+# Also sync non-shell data files (known-stdlib.txt, etc.)
+for src in "$FRAMEWORK_CLONE"/hooks/*.txt; do
+  [ -f "$src" ] || continue
+  name=$(basename "$src")
+  dest=".claude/framework/hooks/$name"
+  cp "$src" "$dest"
+done
+# Sync gates directory if it exists
+if [ -d "$FRAMEWORK_CLONE/gates" ]; then
+  mkdir -p ".claude/framework/gates"
+  for src in "$FRAMEWORK_CLONE"/gates/*.sh; do
+    [ -f "$src" ] || continue
+    name=$(basename "$src")
+    dest=".claude/framework/gates/$name"
+    cp "$src" "$dest"; chmod +x "$dest"
+  done
+fi
 for src in "$FRAMEWORK_CLONE"/hooks/*.sh; do
   name=$(basename "$src")
   dest=".claude/framework/hooks/$name"

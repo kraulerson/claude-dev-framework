@@ -291,8 +291,15 @@ mkdir -p .claude/framework/hooks .claude/framework/rules .claude/project/hooks .
 
 # Copy framework files (excluding .git)
 cp "$FRAMEWORK_CLONE"/hooks/*.sh .claude/framework/hooks/
+cp "$FRAMEWORK_CLONE"/hooks/*.txt .claude/framework/hooks/ 2>/dev/null || true
 cp "$FRAMEWORK_CLONE"/rules/*.md .claude/framework/rules/
 chmod +x .claude/framework/hooks/*.sh
+# Copy gates if they exist
+if [ -d "$FRAMEWORK_CLONE/gates" ]; then
+  mkdir -p .claude/framework/gates
+  cp "$FRAMEWORK_CLONE"/gates/*.sh .claude/framework/gates/
+  chmod +x .claude/framework/gates/*.sh
+fi
 
 # Detect profile (runs for all paths — clean, migration, and reconfigure)
 PROFILE=$(bash "$FRAMEWORK_CLONE/scripts/detect-profile.sh" | tail -1)
