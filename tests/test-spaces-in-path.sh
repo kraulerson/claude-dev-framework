@@ -76,7 +76,7 @@ MANIFEST
   session_output=$(cd "$TEST_DIR" && bash "$TEST_DIR/.claude/framework/hooks/session-start.sh" 2>&1)
   session_exit=$?
   assert_exit_code "0" "$session_exit" "session-start should succeed with spaces in path"
-  assert_contains "$session_output" "CLAUDE DEV FRAMEWORK" "session-start should show banner with spaced path"
+  assert_contains "$session_output" "ZONES ARMED" "session-start should show zones with spaced path"
 
   # Test enforce-evaluate hook executes without error (non-commit command passes)
   local eval_output eval_exit
@@ -96,6 +96,10 @@ MANIFEST
   rm -f "/tmp/.claude_session_start_${TEST_HASH}"
   rm -f "/tmp/.claude_changelog_synced_${TEST_HASH}"
   rm -f "/tmp/.claude_plan_closed_${TEST_HASH}"
+  rm -f "/tmp/.claude_plan_active_${TEST_HASH}"
+  rm -f "/tmp/.claude_has_plan_${TEST_HASH}"
+  rm -f "/tmp/.claude_c7_degraded_${TEST_HASH}"
+  rm -f /tmp/.claude_c7_${TEST_HASH}_*
   rm -rf "$BASE_TEMP"
   unset CLAUDE_PROJECT_DIR TEST_DIR TEST_HASH
 }
