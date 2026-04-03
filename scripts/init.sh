@@ -6,14 +6,16 @@ FRAMEWORK_CLONE="$HOME/.claude-dev-framework"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # ---- Flags ----
-MIGRATE=false; RECONFIGURE=false; ARCHIVE=false; SKIP_PLUGINS=false
-for arg in "$@"; do
-  case "$arg" in
+MIGRATE=false; RECONFIGURE=false; ARCHIVE=false; SKIP_PLUGINS=false; PREPOPULATE_FILE=""
+while [ $# -gt 0 ]; do
+  case "$1" in
     --migrate) MIGRATE=true ;;
     --reconfigure) RECONFIGURE=true ;;
     --archive) ARCHIVE=true ;;
     --skip-plugin-check) SKIP_PLUGINS=true ;;
+    --prepopulate) shift; PREPOPULATE_FILE="${1:-}" ;;
   esac
+  shift
 done
 
 # ---- Safety Checks ----
