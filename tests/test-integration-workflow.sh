@@ -71,7 +71,56 @@ test_full_session_lifecycle() {
   teardown_test_project
 }
 
+# --- Test: v4 full lifecycle ---
+# Design (superpowers) -> Plan (writing-plans + TaskUpdate) -> Edit -> Commit
+test_v4_full_lifecycle() {
+  setup_test_project
+
+  # 1. Source edit should be blocked (no superpowers marker)
+  INPUT_EDIT='{"tool_input":{"file_path":"app.py"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK_DIR/enforce-superpowers.sh" "$INPUT_EDIT")
+  assert_exit_code "2" "$EXIT_CODE" "v4: should block without superpowers"
+
+  # 2. Simulate brainstorming skill -> superpowers marker
+  INPUT_SKILL='{"tool_name":"Skill","tool_input":{"skill":"superpowers:brainstorming"}}'
+  run_hook "$HOOK_DIR/skill-tracker.sh" "$INPUT_SKILL" >/dev/null 2>&1
+  assert_file_exists "/tmp/.claude_superpowers_${TEST_HASH}" "v4: brainstorming should create superpowers marker"
+
+  # 3. Simulate writing-plans skill -> has_plan marker
+  INPUT_PLAN='{"tool_name":"Skill","tool_input":{"skill":"superpowers:writing-plans"}}'
+  run_hook "$HOOK_DIR/skill-tracker.sh" "$INPUT_PLAN" >/dev/null 2>&1
+  assert_file_exists "/tmp/.claude_has_plan_${TEST_HASH}" "v4: writing-plans should create has_plan marker"
+
+  # 4. Source edit should be blocked by Planning Zone (has_plan but no plan_active)
+  EXIT_CODE=$(run_hook_exit_code "$HOOK_DIR/enforce-plan-tracking.sh" "$INPUT_EDIT")
+  assert_exit_code "2" "$EXIT_CODE" "v4: should block without plan_active"
+
+  # 5. Simulate TaskUpdate to in_progress -> plan_active marker
+  INPUT_TASK='{"tool_name":"TaskUpdate","tool_input":{"taskId":"1","status":"in_progress"}}'
+  run_hook "$HOOK_DIR/plan-tracker.sh" "$INPUT_TASK" >/dev/null 2>&1
+  assert_file_exists "/tmp/.claude_plan_active_${TEST_HASH}" "v4: TaskUpdate should create plan_active marker"
+
+  # 6. Source edit should now pass both gates
+  EXIT_CODE=$(run_hook_exit_code "$HOOK_DIR/enforce-superpowers.sh" "$INPUT_EDIT")
+  assert_exit_code "0" "$EXIT_CODE" "v4: should pass superpowers with marker"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK_DIR/enforce-plan-tracking.sh" "$INPUT_EDIT")
+  assert_exit_code "0" "$EXIT_CODE" "v4: should pass plan-tracking with marker"
+
+  # 7. Simulate commit -> markers cleared
+  INPUT_COMMIT='{"tool_input":{"command":"git commit -m \"feat: test\""},"tool_response":{"exit_code":"0"}}'
+  echo "# code" > "$TEST_DIR/app.py"
+  git -C "$TEST_DIR" add app.py
+  git -C "$TEST_DIR" commit -m "feat: test" --quiet
+  run_hook "$HOOK_DIR/sync-tracker.sh" "$INPUT_COMMIT" >/dev/null 2>&1
+  assert_file_not_exists "/tmp/.claude_superpowers_${TEST_HASH}" "v4: commit should clear superpowers marker"
+  assert_file_not_exists "/tmp/.claude_plan_active_${TEST_HASH}" "v4: commit should clear plan_active marker"
+  assert_file_exists "/tmp/.claude_has_plan_${TEST_HASH}" "v4: commit should NOT clear has_plan marker"
+
+  teardown_test_project
+}
+
 # --- Run ---
 echo "integration-workflow (end-to-end)"
 test_full_session_lifecycle
+test_v4_full_lifecycle
 run_tests
