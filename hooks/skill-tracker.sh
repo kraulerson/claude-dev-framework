@@ -21,4 +21,11 @@ case "$SKILL_NAME" in
     touch "/tmp/.claude_superpowers_${HASH}"
     ;;
 esac
+
+# Create has_plan marker when writing-plans is invoked (arms Planning Zone)
+case "$SKILL_NAME" in
+  writing-plans|superpowers:writing-plans)
+    touch "/tmp/.claude_has_plan_${HASH}"
+    ;;
+esac
 exit 0
