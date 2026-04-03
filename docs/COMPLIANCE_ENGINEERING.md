@@ -136,6 +136,34 @@ At session end, if commits were made but no superpowers marker exists, an adviso
 
 **Why advisory and not blocking:** Session end audits are informational. Blocking session end for workflow compliance would trap Claude in sessions where the workflow was legitimately skipped (user said "skip").
 
+## Enforcement Zones (v4.0.0)
+
+v4.0.0 organizes the 8 defense layers into five **enforcement zones** representing workflow stages. Zones are a messaging and organizational convention — hooks still fire independently via Claude Code events.
+
+| Zone | Stage | Hooks | What It Gates |
+|------|-------|-------|---------------|
+| **Discovery** | Session start | session-start.sh | Dependency verification, zone activation |
+| **Design** | Before any source edit | enforce-superpowers.sh, skill-tracker.sh | Write/Edit blocked until Superpowers skill invoked |
+| **Planning** | After design, before implementation | enforce-plan-tracking.sh, plan-tracker.sh | Write/Edit blocked until plan task is in_progress |
+| **Implementation** | During edits | enforce-context7.sh, context7-tracker.sh | Blocks edits using unresearched third-party libraries |
+| **Verification** | Pre-commit | verification-gate.sh, enforce-evaluate.sh, pre-commit-checks.sh | Configurable quality gates + existing checks |
+
+### Why Zones?
+
+Zones solve two problems:
+
+1. **Session start verbosity** — v3 listed all 14 rules individually. v4 replaces this with a terse zone summary. Claude sees "5 zones armed" instead of 14 rule descriptions.
+
+2. **Multi-phase reinforcement** — Each zone's block message carries a zone-specific reminder. Claude gets the compliance directive at session start, then targeted reinforcement every time it hits a gate. More frequent, more specific, less verbose.
+
+### New Defense Layers in v4
+
+**Plan-tracking enforcement:** After brainstorming and planning, Claude must mark a specific plan task as in_progress before editing source files. This creates a mechanical link between the plan and the edit, preventing Claude from ignoring the plan after creating it.
+
+**Context7 enforcement:** When Claude writes code using a third-party library, it must first query Context7 MCP for current documentation. This prevents code generation from outdated training data. Standard library imports and relative imports are excluded via `known-stdlib.txt`.
+
+**Verification gates:** Configurable pre-commit quality checks defined in `manifest.json`. Projects can add linter gates, type-check gates, and visual audit gates without modifying framework hooks.
+
 ## Adding New Enforcement
 
 When adding new rules or workflows that require enforcement:
@@ -146,6 +174,7 @@ When adding new rules or workflows that require enforcement:
 4. **List observed bypass patterns** (Layer 6). Each time Claude finds a new bypass, add a "Do NOT" for it.
 5. **Add a compliance reminder** (Layer 6). Every blocking hook should include the compliance frame.
 6. **Audit at session end** (Layer 8). Even if you can't block, you can warn.
+7. **Assign to a zone** (v4). New hooks should belong to a zone for organizational clarity and targeted block messages.
 
 ## The Fundamental Limitation
 

@@ -1,10 +1,23 @@
 # Hook Reference
 
+## Enforcement Zones (v4.0.0)
+
+| Zone | Hooks | Purpose |
+|------|-------|---------|
+| Discovery | session-start.sh | Dependency checks, zone activation, Context7 install |
+| Design | enforce-superpowers.sh, skill-tracker.sh | Blocks edits until Superpowers skill invoked |
+| Planning | enforce-plan-tracking.sh, plan-tracker.sh | Blocks edits until plan task is in_progress |
+| Implementation | enforce-context7.sh, context7-tracker.sh | Blocks edits using unresearched libraries |
+| Verification | enforce-evaluate.sh, pre-commit-checks.sh, verification-gate.sh | Pre-commit quality gates |
+
+---
+
 ## session-start.sh
 - **Event:** SessionStart
+- **Zone:** Discovery
 - **Blocking:** No
-- **Purpose:** Load active rules as context, inject marker instructions, check framework sync, verify plugins, load context history
-- **Customize:** Edit `manifest.json → activeRules` to change which rules are loaded
+- **Purpose:** Activates enforcement zones, checks dependencies (jq, Superpowers, Context7), outputs terse zone report, loads context history
+- **Customize:** Edit `manifest.json → activeRules` to change rule count; `verificationGates` to change gate listing
 - **Disable:** Remove `session-start` from `manifest.json → activeHooks`
 
 ## enforce-evaluate.sh
@@ -73,5 +86,61 @@
 ## sync-tracker.sh
 - **Event:** PostToolUse (Bash)
 - **Blocking:** No
-- **Purpose:** Creates changelog sync marker when sync scripts succeed; clears evaluation/superpowers markers after successful commit
+- **Purpose:** Creates changelog sync marker when sync scripts succeed; clears evaluation/superpowers/plan_active markers after successful commit
 - **Disable:** Remove `sync-tracker` from `manifest.json → activeHooks`
+
+## skill-tracker.sh
+- **Event:** PostToolUse (all tools)
+- **Zone:** Design + Planning
+- **Blocking:** No
+- **Purpose:** Automatically creates superpowers marker when Superpowers skill is invoked; creates has_plan marker when writing-plans is invoked
+- **Markers:** `.claude_superpowers_{hash}`, `.claude_has_plan_{hash}`
+- **Disable:** Remove `skill-tracker` from `manifest.json → activeHooks`
+
+## marker-guard.sh
+- **Event:** PreToolUse (Bash)
+- **Blocking:** Yes (exit 2)
+- **Purpose:** Blocks manual creation of workflow markers via `touch` command. Prevents Claude from forging markers to bypass enforcement.
+- **Allowed:** `mark-evaluated.sh` script path
+- **Disable:** Remove `marker-guard` from `manifest.json → activeHooks`
+
+## enforce-plan-tracking.sh
+- **Event:** PreToolUse (Write|Edit)
+- **Zone:** Planning
+- **Blocking:** Yes (exit 2)
+- **Purpose:** Blocks source file edits until a plan task is marked in_progress via TaskUpdate
+- **Skips:** Docs, config, test files; also skips if no `has_plan` marker exists (zone not armed)
+- **Marker:** `/tmp/.claude_plan_active_{hash}` — created by plan-tracker.sh when TaskUpdate sets status to in_progress
+- **Disable:** Remove `enforce-plan-tracking` from `manifest.json → activeHooks`
+
+## plan-tracker.sh
+- **Event:** PostToolUse (all tools)
+- **Zone:** Planning
+- **Blocking:** No
+- **Purpose:** Creates plan_active marker when TaskUpdate sets a task to in_progress; clears it when a task is set to completed
+- **Disable:** Remove `plan-tracker` from `manifest.json → activeHooks`
+
+## enforce-context7.sh
+- **Event:** PreToolUse (Write|Edit)
+- **Zone:** Implementation
+- **Blocking:** Yes (exit 2)
+- **Purpose:** Scans code being written for import/require statements. Blocks if any third-party library hasn't been researched via Context7 MCP.
+- **Skips:** Docs, config, test files; standard library imports (known-stdlib.txt); relative imports; degraded mode
+- **Marker:** `/tmp/.claude_c7_{hash}_{library}` — one per researched library, created by context7-tracker.sh
+- **Disable:** Remove `enforce-context7` from `manifest.json → activeHooks`
+
+## context7-tracker.sh
+- **Event:** PostToolUse (all tools)
+- **Zone:** Implementation
+- **Blocking:** No
+- **Purpose:** Watches for Context7 MCP tool calls (resolve-library-id, get-library-docs) and creates per-library markers
+- **Disable:** Remove `context7-tracker` from `manifest.json → activeHooks`
+
+## verification-gate.sh
+- **Event:** PreToolUse (Bash)
+- **Zone:** Verification
+- **Blocking:** Yes (exit 2)
+- **Purpose:** Runs configurable verification gates before git commit. Gates are defined in `manifest.json → projectConfig._base.verificationGates[]`
+- **Gate types:** `failOn: "exit_code"` (non-zero fails), `failOn: "stderr"` (pattern match), `failOn: "stdout"` (pattern match)
+- **Built-in gates:** Linter-Gate, Visual Auditor (web-app), Type-Check Gate
+- **Disable:** Remove `verification-gate` from `manifest.json → activeHooks` or set individual gates to `enabled: false`
