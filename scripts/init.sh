@@ -92,6 +92,7 @@ parse_profile() {
 
 # ---- Shared functions (generate_settings_json, merge_hooks_into_settings) ----
 source "$(dirname "$0")/_shared.sh"
+source "$FRAMEWORK_CLONE/hooks/_helpers.sh" 2>/dev/null || true
 
 # ---- Helper: Discovery Interview ----
 run_discovery() {
@@ -217,21 +218,68 @@ RESTORESH
   echo "Backup created at $BACKUP_DIR"
   echo ""
 
-  # Phase 5: PLUGIN CHECK
-  if [ "$SKIP_PLUGINS" = false ] && [ -f "$HOME/.claude/settings.json" ] && command -v jq &>/dev/null; then
-    echo "── Phase 5: PLUGIN CHECK ──"
-    SP=$(jq -r '.enabledPlugins["superpowers@claude-plugins-official"] // false' "$HOME/.claude/settings.json" 2>/dev/null || echo "false")
-    if [ "$SP" = "true" ]; then
-      echo "  ✓ Superpowers plugin: INSTALLED"
-    else
-      echo "  ✗ Superpowers plugin: NOT INSTALLED (required)"
-      echo "    Install: Run claude → /plugins → search 'superpowers' → install"
+  # Phase 5: DEPENDENCY CHECK
+  if [ "$SKIP_PLUGINS" = false ]; then
+    echo "── Phase 5: DEPENDENCY CHECK ──"
+
+    if [ -f "$HOME/.claude/settings.json" ] && command -v jq &>/dev/null; then
+      SP=$(jq -r '.enabledPlugins["superpowers@claude-plugins-official"] // false' "$HOME/.claude/settings.json" 2>/dev/null || echo "false")
+      if [ "$SP" = "true" ]; then
+        echo "  ✓ Superpowers plugin: INSTALLED"
+      else
+        echo "  ✗ Superpowers plugin: NOT INSTALLED (required)"
+        echo "    Install: Run claude > /plugins > search 'superpowers' > install"
+      fi
     fi
+
+    if check_context7 2>/dev/null; then
+      echo "  ✓ Context7 MCP: INSTALLED"
+    else
+      echo "  ✗ Context7 MCP: NOT INSTALLED (required for v4.0.0)"
+      read -rp "    Install Context7 now? (requires Node.js) [y/N]: " c7_reply
+      if [[ "$c7_reply" =~ ^[Yy]$ ]]; then
+        echo "    Installing Context7..."
+        claude mcp add context7 -- npx -y @upstash/context7-mcp@latest 2>/dev/null && echo "  ✓ Context7 MCP: INSTALLED" || echo "  ✗ Context7 install failed. Implementation Zone will be degraded."
+      else
+        echo "    Skipped. Implementation Zone will be degraded until Context7 is installed."
+      fi
+    fi
+
     echo ""
   fi
 
   read -rp "Proceed with framework installation? (y/n): " proceed
   [ "$proceed" != "y" ] && { echo "Aborted."; exit 0; }
+fi
+
+# ---- Dependency check (clean install path) ----
+if [ "$HAS_EXISTING" = false ] && [ "$SKIP_PLUGINS" = false ]; then
+  echo "── Checking Dependencies ──"
+
+  if [ -f "$HOME/.claude/settings.json" ] && command -v jq &>/dev/null; then
+    SP=$(jq -r '.enabledPlugins["superpowers@claude-plugins-official"] // false' "$HOME/.claude/settings.json" 2>/dev/null || echo "false")
+    if [ "$SP" = "true" ]; then
+      echo "  ✓ Superpowers plugin: INSTALLED"
+    else
+      echo "  ✗ Superpowers plugin: NOT INSTALLED (required)"
+      echo "    Install: Run claude > /plugins > search 'superpowers' > install"
+    fi
+  fi
+
+  if check_context7 2>/dev/null; then
+    echo "  ✓ Context7 MCP: INSTALLED"
+  else
+    echo "  ✗ Context7 MCP: NOT INSTALLED (required for v4.0.0)"
+    read -rp "    Install Context7 now? (requires Node.js) [y/N]: " c7_reply
+    if [[ "$c7_reply" =~ ^[Yy]$ ]]; then
+      echo "    Installing Context7..."
+      claude mcp add context7 -- npx -y @upstash/context7-mcp@latest 2>/dev/null && echo "  ✓ Context7 MCP: INSTALLED" || echo "  ✗ Context7 install failed. Implementation Zone will be degraded."
+    else
+      echo "    Skipped. Implementation Zone will be degraded until Context7 is installed."
+    fi
+  fi
+
+  echo ""
 fi
 
 # ---- Phase 6: INSTALL (both clean and migration converge here) ----
