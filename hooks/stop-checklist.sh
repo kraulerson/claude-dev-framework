@@ -70,19 +70,19 @@ if [ -n "$SESSION_START" ]; then
   if [ "$SESSION_COMMITS" -gt 0 ]; then
     ADVISORIES=""
 
-    # Superpowers audit: commits were made but no superpowers marker
+    # [Design Zone] Superpowers audit: commits were made but no superpowers marker
     if [ ! -f "/tmp/.claude_superpowers_${HASH}" ]; then
-      ADVISORIES="${ADVISORIES}WARNING: This session produced commits but the Superpowers workflow may not have been followed. Review commit quality.\n\n"
+      ADVISORIES="${ADVISORIES}[Design Zone] This session produced commits but the Superpowers workflow may not have been followed. Review commit quality.\n\n"
     fi
 
-    # Plan closure: if Superpowers was used (commits exist) and no closure marker
+    # [Planning Zone] Plan closure: if Superpowers was used (commits exist) and no closure marker
     if [ ! -f "/tmp/.claude_plan_closed_${HASH}" ]; then
-      ADVISORIES="${ADVISORIES}If this session involved Superpowers-planned work, document plan closure: planned vs. actual, decisions made, issues deferred.\n\n"
+      ADVISORIES="${ADVISORIES}[Planning Zone] If this session involved planned work, document plan closure: planned vs. actual, decisions made, issues deferred.\n\n"
     fi
 
-    # Session handoff
+    # [Discovery Zone] Session handoff
     if [ -n "$CTX_HISTORY" ]; then
-      ADVISORIES="${ADVISORIES}Consider saving a handoff note to ${CTX_HISTORY} — what was completed, what is pending, and what comes next — so the next session can pick up cleanly."
+      ADVISORIES="${ADVISORIES}[Discovery Zone] Consider saving a handoff note to ${CTX_HISTORY} for the next session."
     fi
 
     if [ -n "$ADVISORIES" ]; then
