@@ -86,6 +86,20 @@ cd ~/your-project && bash ~/.claude-dev-framework/scripts/sync.sh
 
 The sync script compares file hashes, preserves local modifications, and handles conflicts interactively.
 
+## Optional: Persistent Memory MCP Servers
+
+The framework handles session-to-session continuity through its `context-management` rule (write summaries before compaction) and `CLAUDE.md` files (read at every session start). For most projects, this is sufficient.
+
+For projects with long-lived context needs — large codebases, multi-month efforts, or complex architectural decisions that span many sessions — you may want to add a dedicated memory MCP server. These are **not framework dependencies** and are configured per-project in `.claude/settings.json`:
+
+| Server | What It Does | Infrastructure |
+|--------|-------------|----------------|
+| [Qdrant MCP](https://github.com/qdrant/mcp-server-qdrant) | Semantic vector search over stored knowledge. Store decisions, retrieve by meaning. | Local embedded mode (Python + FastEmbed) or Docker/cloud |
+| [Basic Memory](https://github.com/basicmachines-co/basic-memory) | Markdown files + SQLite index. Local-first, human-readable. | Python, local files |
+| [MCP Knowledge Graph](https://github.com/modelcontextprotocol/servers/tree/main/src/memory) | Entity/relation graph stored as JSONL. Structured retrieval, no embeddings. | Node.js, local files |
+
+The framework's enforcement hooks work independently of any memory server — adding one is a project-level decision, not a framework requirement.
+
 ## Troubleshooting
 
 - **Hooks not firing:** Claude Code snapshots hooks at startup. Restart the session.
