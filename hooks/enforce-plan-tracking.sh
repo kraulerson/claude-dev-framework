@@ -1,17 +1,12 @@
 #!/usr/bin/env bash
 # enforce-plan-tracking.sh — PreToolUse (Write|Edit) blocking hook for Planning Zone
-# Blocks source file edits until a plan task is marked in_progress.
-# Only active when writing-plans skill has been invoked (has_plan marker exists).
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/_helpers.sh" 2>/dev/null || exit 1
+source "$SCRIPT_DIR/_preflight.sh"
 
-INPUT=$(cat)
-FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.path // empty' 2>/dev/null || echo "")
-[ -z "$FILE_PATH" ] && exit 0
-is_doc_or_config "$FILE_PATH" && exit 0
-is_test_file "$FILE_PATH" && exit 0
-is_source_file "$FILE_PATH" || exit 0
+preflight_init
+preflight_skip_non_source && exit 0
 
 HASH=$(get_project_hash)
 
