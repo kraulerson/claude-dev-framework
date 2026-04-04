@@ -68,6 +68,7 @@ get_branch_config_array() {
   echo "$result"
 }
 
+_SOURCE_EXTS_CACHE=""
 is_source_file() {
   local ext=".${1##*.}"
 
@@ -77,31 +78,32 @@ is_source_file() {
   esac
 
   # 2. Explicit allowlist from manifest (or fallback) — user override
-  local extensions
-  extensions=$(get_branch_config_array '.sourceExtensions')
-  if [ -z "$extensions" ]; then
-    extensions=".html .css .scss .less .sass .jsx .tsx .vue .svelte"
-    extensions="$extensions .js .ts .mjs .cjs"
-    extensions="$extensions .py .ipynb"
-    extensions="$extensions .java .kt .kts .scala .groovy"
-    extensions="$extensions .cs .fs .vb"
-    extensions="$extensions .swift .m .mm"
-    extensions="$extensions .c .cpp .h .hpp .rs .go .zig .asm .s"
-    extensions="$extensions .rb .erb"
-    extensions="$extensions .php"
-    extensions="$extensions .sh .bash .zsh"
-    extensions="$extensions .bat .cmd .ps1 .psm1 .vbs"
-    extensions="$extensions .dart"
-    extensions="$extensions .ex .exs .erl"
-    extensions="$extensions .hs"
-    extensions="$extensions .clj .cljs"
-    extensions="$extensions .lua"
-    extensions="$extensions .r .R"
-    extensions="$extensions .pl .pm"
-    extensions="$extensions .sql .graphql .proto"
-    extensions="$extensions .tf .hcl"
+  if [ -z "$_SOURCE_EXTS_CACHE" ]; then
+    _SOURCE_EXTS_CACHE=$(get_branch_config_array '.sourceExtensions')
+    if [ -z "$_SOURCE_EXTS_CACHE" ]; then
+      _SOURCE_EXTS_CACHE=".html .css .scss .less .sass .jsx .tsx .vue .svelte"
+      _SOURCE_EXTS_CACHE="$_SOURCE_EXTS_CACHE .js .ts .mjs .cjs"
+      _SOURCE_EXTS_CACHE="$_SOURCE_EXTS_CACHE .py .ipynb"
+      _SOURCE_EXTS_CACHE="$_SOURCE_EXTS_CACHE .java .kt .kts .scala .groovy"
+      _SOURCE_EXTS_CACHE="$_SOURCE_EXTS_CACHE .cs .fs .vb"
+      _SOURCE_EXTS_CACHE="$_SOURCE_EXTS_CACHE .swift .m .mm"
+      _SOURCE_EXTS_CACHE="$_SOURCE_EXTS_CACHE .c .cpp .h .hpp .rs .go .zig .asm .s"
+      _SOURCE_EXTS_CACHE="$_SOURCE_EXTS_CACHE .rb .erb"
+      _SOURCE_EXTS_CACHE="$_SOURCE_EXTS_CACHE .php"
+      _SOURCE_EXTS_CACHE="$_SOURCE_EXTS_CACHE .sh .bash .zsh"
+      _SOURCE_EXTS_CACHE="$_SOURCE_EXTS_CACHE .bat .cmd .ps1 .psm1 .vbs"
+      _SOURCE_EXTS_CACHE="$_SOURCE_EXTS_CACHE .dart"
+      _SOURCE_EXTS_CACHE="$_SOURCE_EXTS_CACHE .ex .exs .erl"
+      _SOURCE_EXTS_CACHE="$_SOURCE_EXTS_CACHE .hs"
+      _SOURCE_EXTS_CACHE="$_SOURCE_EXTS_CACHE .clj .cljs"
+      _SOURCE_EXTS_CACHE="$_SOURCE_EXTS_CACHE .lua"
+      _SOURCE_EXTS_CACHE="$_SOURCE_EXTS_CACHE .r .R"
+      _SOURCE_EXTS_CACHE="$_SOURCE_EXTS_CACHE .pl .pm"
+      _SOURCE_EXTS_CACHE="$_SOURCE_EXTS_CACHE .sql .graphql .proto"
+      _SOURCE_EXTS_CACHE="$_SOURCE_EXTS_CACHE .tf .hcl"
+    fi
   fi
-  for e in $extensions; do [ "$ext" = "$e" ] && return 0; done
+  for e in $_SOURCE_EXTS_CACHE; do [ "$ext" = "$e" ] && return 0; done
 
   # 3. Doc/config files are not source
   is_doc_or_config "$1" && return 1
