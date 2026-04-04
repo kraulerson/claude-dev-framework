@@ -144,13 +144,6 @@ is_doc_or_config() {
   return 1
 }
 
-validate_file_path() {
-  case "$1" in
-    *../*|*/../*) echo "REJECTED: path traversal" >&2; return 1 ;;
-  esac
-  return 0
-}
-
 check_context7() {
   # Check if Context7 MCP server is registered in Claude Code
   local settings="$HOME/.claude/settings.json"
