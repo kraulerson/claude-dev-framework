@@ -36,14 +36,19 @@ while IFS= read -r gate; do
     continue
   fi
 
-  # Run the gate
+  # Run the gate — capture stdout and stderr separately without tmpfile
   GATE_STDOUT=""
   GATE_STDERR=""
   GATE_EXIT=0
-  GATE_STDERR_FILE=$(mktemp)
-  GATE_STDOUT=$(eval "$CMD" 2>"$GATE_STDERR_FILE") || GATE_EXIT=$?
-  GATE_STDERR=$(cat "$GATE_STDERR_FILE")
-  rm -f "$GATE_STDERR_FILE"
+  if [ "$FAIL_ON" = "stderr" ]; then
+    # Need separate streams for stderr pattern matching
+    exec 3>&1
+    GATE_STDERR=$(eval "$CMD" 2>&1 1>&3) && GATE_EXIT=0 || GATE_EXIT=$?
+    exec 3>&-
+  else
+    # For exit_code and stdout modes, merge streams
+    GATE_STDOUT=$(eval "$CMD" 2>&1) || GATE_EXIT=$?
+  fi
 
   FAILED=false
 
