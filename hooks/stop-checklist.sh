@@ -33,15 +33,26 @@ HASH=$(get_project_hash)
 SESSION_START=$(cat "/tmp/.claude_session_start_${HASH}" 2>/dev/null || echo "")
 if [ "$HAS_SOURCE" = false ] && [ -z "$STAGED" ] && [ -n "$SESSION_START" ]; then
   UNTESTED_FIXES=""
-  while IFS=' ' read -r sha msg; do
-    [ -z "$sha" ] && continue
-    if echo "$msg" | grep -qiE '\b(fix|bug|patch|hotfix|repair|resolve)\b'; then
-      COMMIT_FILES=$(git diff --name-only "${sha}~1" "$sha" 2>/dev/null || true)
-      HAS_TEST=false
-      for f in $COMMIT_FILES; do is_test_file "$f" && { HAS_TEST=true; break; }; done
-      [ "$HAS_TEST" = false ] && UNTESTED_FIXES="${UNTESTED_FIXES}${sha:0:8}\n"
+  # Get all commits with files in one git call
+  COMMIT_LOG=$(git log --format="COMMIT %H %s" --name-only "${SESSION_START}..HEAD" 2>/dev/null || true)
+  CURRENT_SHA="" CURRENT_MSG="" CURRENT_HAS_TEST=false
+  while IFS= read -r line; do
+    if [[ "$line" == COMMIT\ * ]]; then
+      # Process previous commit
+      if [ -n "$CURRENT_SHA" ] && echo "$CURRENT_MSG" | grep -qiE '\b(fix|bug|patch|hotfix|repair|resolve)\b'; then
+        [ "$CURRENT_HAS_TEST" = false ] && UNTESTED_FIXES="${UNTESTED_FIXES}${CURRENT_SHA:0:8}\n"
+      fi
+      CURRENT_SHA="${line#COMMIT }" CURRENT_SHA="${CURRENT_SHA%% *}"
+      CURRENT_MSG="${line#COMMIT * }"
+      CURRENT_HAS_TEST=false
+    elif [ -n "$line" ] && [ -n "$CURRENT_SHA" ]; then
+      is_test_file "$line" && CURRENT_HAS_TEST=true
     fi
-  done <<< "$(git log --format='%H %s' "${SESSION_START}..HEAD" 2>/dev/null || true)"
+  done <<< "$COMMIT_LOG"
+  # Process last commit
+  if [ -n "$CURRENT_SHA" ] && echo "$CURRENT_MSG" | grep -qiE '\b(fix|bug|patch|hotfix|repair|resolve)\b'; then
+    [ "$CURRENT_HAS_TEST" = false ] && UNTESTED_FIXES="${UNTESTED_FIXES}${CURRENT_SHA:0:8}\n"
+  fi
   if [ -n "$UNTESTED_FIXES" ]; then
     ERRORS="${ERRORS}- One or more commits look like a bug fix but have NO regression test.\n"
   fi
