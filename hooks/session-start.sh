@@ -15,7 +15,14 @@ FRAMEWORK_DIR="$(get_framework_dir)"
 FRAMEWORK_CLONE="$HOME/.claude-dev-framework"
 WARNINGS=""
 
-# --- Dependency checks ---
+# --- Start git fetch in background (overlaps with local checks below) ---
+FETCH_PID=""
+if [ -d "$FRAMEWORK_CLONE/.git" ]; then
+  git -C "$FRAMEWORK_CLONE" fetch origin main --quiet 2>/dev/null &
+  FETCH_PID=$!
+fi
+
+# --- Dependency checks (local, fast) ---
 
 # jq
 if ! check_jq; then
@@ -44,22 +51,6 @@ else
   touch "/tmp/.claude_c7_degraded_${HASH}"
 fi
 
-# --- Framework freshness ---
-SYNC_STATUS="unknown"
-if [ -d "$FRAMEWORK_CLONE/.git" ]; then
-  pushd "$FRAMEWORK_CLONE" > /dev/null
-  git fetch origin main --quiet 2>/dev/null || true
-  LOCAL=$(git rev-parse HEAD 2>/dev/null || echo "?")
-  REMOTE=$(git rev-parse origin/main 2>/dev/null || echo "?")
-  if [ "$LOCAL" = "$REMOTE" ]; then SYNC_STATUS="up-to-date"
-  elif [ "$LOCAL" != "?" ] && [ "$REMOTE" != "?" ]; then
-    BEHIND=$(git rev-list --count HEAD..origin/main 2>/dev/null || echo "?")
-    SYNC_STATUS="$BEHIND behind"
-    WARNINGS="${WARNINGS}\n  ! Framework $BEHIND commits behind. Run: cd ~/.claude-dev-framework && git pull && cd - && bash ~/.claude-dev-framework/scripts/sync.sh"
-  fi
-  popd > /dev/null
-fi
-
 # --- Discovery review (>90 days) ---
 LR=$(get_manifest_value '.discovery.lastReviewDate')
 if [ -n "$LR" ]; then
@@ -67,6 +58,20 @@ if [ -n "$LR" ]; then
   THEN=$(date -j -f "%Y-%m-%d" "$LR" +%s 2>/dev/null || date -d "$LR" +%s 2>/dev/null || echo "$NOW")
   DAYS=$(( (NOW - THEN) / 86400 ))
   [ "$DAYS" -gt 90 ] && WARNINGS="${WARNINGS}\n  ! Discovery review overdue (last: $LR, $DAYS days ago). Run: init.sh --reconfigure"
+fi
+
+# --- Framework freshness (wait for background fetch) ---
+SYNC_STATUS="unknown"
+if [ -n "$FETCH_PID" ]; then
+  wait "$FETCH_PID" 2>/dev/null || true
+  LOCAL=$(git -C "$FRAMEWORK_CLONE" rev-parse HEAD 2>/dev/null || echo "?")
+  REMOTE=$(git -C "$FRAMEWORK_CLONE" rev-parse origin/main 2>/dev/null || echo "?")
+  if [ "$LOCAL" = "$REMOTE" ]; then SYNC_STATUS="up-to-date"
+  elif [ "$LOCAL" != "?" ] && [ "$REMOTE" != "?" ]; then
+    BEHIND=$(git -C "$FRAMEWORK_CLONE" rev-list --count HEAD..origin/main 2>/dev/null || echo "?")
+    SYNC_STATUS="$BEHIND behind"
+    WARNINGS="${WARNINGS}\n  ! Framework $BEHIND commits behind. Run: cd ~/.claude-dev-framework && git pull && cd - && bash ~/.claude-dev-framework/scripts/sync.sh"
+  fi
 fi
 
 # --- Count active rules ---
