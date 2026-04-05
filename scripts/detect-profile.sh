@@ -115,7 +115,7 @@ else
     echo "  - $name: $desc"
   done
   echo ""
-  read -rp "Enter a profile name (or 'new' to create one): " choice
+  read -rp "What type of project is this? Enter a profile name from above (or 'new' to create one): " choice
   if [ "$choice" = "new" ]; then
     read -rp "What kind of project is this? " project_type
     PROFILE_NAME=$(echo "$project_type" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd 'a-z0-9-')
