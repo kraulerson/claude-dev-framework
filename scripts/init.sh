@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# init.sh — First-time setup + migration for Claude Dev Framework
+# init.sh — First-time setup + migration for Development Guardrails for Claude Code
 set -euo pipefail
 
 FRAMEWORK_CLONE="$HOME/.claude-dev-framework"

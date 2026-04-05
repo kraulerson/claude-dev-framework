@@ -1,6 +1,6 @@
-# How This Framework Works — For Claude
+# How These Guardrails Work — For Claude
 
-This document explains the Claude Dev Framework from your perspective as the AI agent operating within it. The framework enforces development discipline through hooks that fire at specific points in your workflow.
+This document explains Development Guardrails for Claude Code from your perspective as the AI agent operating within it. The framework enforces development discipline through hooks that fire at specific points in your workflow.
 
 ## Session Lifecycle
 

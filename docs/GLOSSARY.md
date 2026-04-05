@@ -1,12 +1,12 @@
 # Glossary
 
-Canonical terms for the Claude Dev Framework. All rules, hooks, documentation, and scripts should use these terms consistently.
+Canonical terms for Development Guardrails for Claude Code. All rules, hooks, documentation, and scripts should use these terms consistently.
 
 ## Framework Components
 
 | Concept | Canonical Term | Description | Do Not Use |
 |---------|---------------|-------------|------------|
-| The overall system | **the framework** | The Claude Dev Framework as a whole — the concept, not a specific directory | "the system", "the tool" |
+| The overall system | **the guardrails** | Development Guardrails for Claude Code as a whole — the concept, not a specific directory | "the system", "the tool", "the framework" |
 | The GitHub repository | **upstream repo** | The source of truth at `github.com/kraulerson/claude-dev-framework` | "global template repo", "global repo" |
 | `~/.claude-dev-framework/` | **local clone** | The git clone of the upstream repo on each development machine | "framework clone", "global clone", "global version" |
 | `.claude/framework/` in a project | **project copy** | The synced copy of hooks and rules inside a project directory | "synced copy", "local framework" |

@@ -8,7 +8,7 @@ PASSED_FILES=0
 FAILED_FILES=0
 FAILED_NAMES=""
 
-echo "=== Claude Dev Framework Test Suite ==="
+echo "=== Development Guardrails Test Suite ==="
 echo ""
 
 for test_file in "$TESTS_DIR"/test-*.sh; do

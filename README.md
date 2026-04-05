@@ -1,6 +1,6 @@
-# Claude Dev Framework
+# Development Guardrails for Claude Code
 
-A universal development discipline enforcement framework for [Claude Code](https://claude.com/claude-code). Built to solve a real problem: Claude is brilliant at writing code but will skip its own discipline whenever it decides a task is "simple enough." Without mechanical enforcement, evaluation gets skipped, tests get forgotten, changelogs go stale, and deployment commands run before code is pushed.
+A universal development discipline enforcement system for [Claude Code](https://claude.com/claude-code). Built to solve a real problem: Claude is brilliant at writing code but will skip its own discipline whenever it decides a task is "simple enough." Without mechanical enforcement, evaluation gets skipped, tests get forgotten, changelogs go stale, and deployment commands run before code is pushed.
 
 This framework fixes that — but getting here required solving a deeper problem first. Claude has an internal priority stack: **speed → user satisfaction → compliance**. It classifies tasks as "trivial" or "complex" *before* checking rules, then rationalizes past any rule it considers unnecessary for "trivial" tasks. Early versions of this framework used advisory hooks (context injection), which Claude ignored. We then switched to blocking hooks (exit 2), which Claude bypassed by forging workflow markers. We removed the marker commands from messages, and Claude found them in rule files. We blocked the touch commands, and Claude presented text evaluations as substitutes for the required brainstorming skill.
 
