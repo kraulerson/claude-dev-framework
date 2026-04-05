@@ -40,6 +40,22 @@ if ! command -v jq &>/dev/null; then
   echo "Install: brew install jq (macOS) or apt install jq (Linux)" >&2
 fi
 
+# ---- Helper: install Context7 with 30s timeout ----
+_install_context7() {
+  claude mcp add context7 -- npx -y @upstash/context7-mcp@latest 2>/dev/null &
+  local pid=$! elapsed=0
+  while kill -0 "$pid" 2>/dev/null; do
+    sleep 1
+    elapsed=$((elapsed + 1))
+    if [ "$elapsed" -ge 30 ]; then
+      kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null || true
+      echo "  ✗ Context7 install timed out after 30s. Implementation Zone will be degraded."
+      return 1
+    fi
+  done
+  wait "$pid" 2>/dev/null && echo "  ✓ Context7 MCP: INSTALLED" || echo "  ✗ Context7 install failed. Implementation Zone will be degraded."
+}
+
 # ---- Archive Mode ----
 if [ "$ARCHIVE" = true ]; then
   echo "=== Archive Mode ==="
@@ -236,10 +252,15 @@ RESTORESH
       echo "  ✓ Context7 MCP: INSTALLED"
     else
       echo "  ✗ Context7 MCP: NOT INSTALLED (required for v4.0.0)"
-      read -rp "    Install Context7 now? (requires Node.js) [y/N]: " c7_reply
+      if [ -t 0 ]; then
+        read -rp "    Install Context7 now? (requires Node.js) [y/N]: " c7_reply
+      else
+        c7_reply="n"
+        echo "    Non-interactive mode: skipping Context7 install."
+      fi
       if [[ "$c7_reply" =~ ^[Yy]$ ]]; then
-        echo "    Installing Context7..."
-        claude mcp add context7 -- npx -y @upstash/context7-mcp@latest 2>/dev/null && echo "  ✓ Context7 MCP: INSTALLED" || echo "  ✗ Context7 install failed. Implementation Zone will be degraded."
+        echo "    Installing Context7 (30s timeout)..."
+        _install_context7
       else
         echo "    Skipped. Implementation Zone will be degraded until Context7 is installed."
       fi
@@ -248,8 +269,10 @@ RESTORESH
     echo ""
   fi
 
-  read -rp "Proceed with framework installation? (y/n): " proceed
-  [ "$proceed" != "y" ] && { echo "Aborted."; exit 0; }
+  if [ -t 0 ]; then
+    read -rp "Proceed with framework installation? (y/n): " proceed
+    [ "$proceed" != "y" ] && { echo "Aborted."; exit 0; }
+  fi
 fi
 
 # ---- Dependency check (clean install path) ----
@@ -270,10 +293,15 @@ if [ "$HAS_EXISTING" = false ] && [ "$SKIP_PLUGINS" = false ]; then
     echo "  ✓ Context7 MCP: INSTALLED"
   else
     echo "  ✗ Context7 MCP: NOT INSTALLED (required for v4.0.0)"
-    read -rp "    Install Context7 now? (requires Node.js) [y/N]: " c7_reply
+    if [ -t 0 ]; then
+      read -rp "    Install Context7 now? (requires Node.js) [y/N]: " c7_reply
+    else
+      c7_reply="n"
+      echo "    Non-interactive mode: skipping Context7 install."
+    fi
     if [[ "$c7_reply" =~ ^[Yy]$ ]]; then
-      echo "    Installing Context7..."
-      claude mcp add context7 -- npx -y @upstash/context7-mcp@latest 2>/dev/null && echo "  ✓ Context7 MCP: INSTALLED" || echo "  ✗ Context7 install failed. Implementation Zone will be degraded."
+      echo "    Installing Context7 (30s timeout)..."
+      _install_context7
     else
       echo "    Skipped. Implementation Zone will be degraded until Context7 is installed."
     fi
