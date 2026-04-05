@@ -319,8 +319,12 @@ FW_VERSION=$(cat "$FRAMEWORK_CLONE/FRAMEWORK_VERSION")
 FW_COMMIT=$(cd "$FRAMEWORK_CLONE" && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 TODAY=$(date +%Y-%m-%dT%H:%M:%SZ)
 
-RULES_JSON=$(printf '%s\n' "${ALL_RULES[@]}" | jq -R . | jq -s '.')
-HOOKS_JSON=$(printf '%s\n' "${ALL_HOOKS[@]}" | jq -R . | jq -s '.')
+if [ ${#ALL_RULES[@]} -eq 0 ]; then RULES_JSON='[]'; else
+  RULES_JSON=$(printf '%s\n' "${ALL_RULES[@]}" | jq -R . | jq -s '.')
+fi
+if [ ${#ALL_HOOKS[@]} -eq 0 ]; then HOOKS_JSON='[]'; else
+  HOOKS_JSON=$(printf '%s\n' "${ALL_HOOKS[@]}" | jq -R . | jq -s '.')
+fi
 
 # Run discovery — prepopulate takes priority over interactive interview
 DISCOVERY_JSON="{}"
@@ -385,7 +389,7 @@ jq -n \
   }' > .claude/manifest.json
 
 # Generate settings.json
-SETTINGS=$(generate_settings_json "${ALL_HOOKS[@]}")
+SETTINGS=$(generate_settings_json ${ALL_HOOKS[@]+"${ALL_HOOKS[@]}"})
 if ! echo "$SETTINGS" | jq '.' >/dev/null 2>&1; then
   echo "ERROR: generate_settings_json produced invalid JSON:" >&2
   echo "$SETTINGS" >&2
