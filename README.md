@@ -95,24 +95,21 @@ The `--prepopulate` flag accepts a JSON file with the same structure as the disc
 
 ## Hooks
 
-**18 hooks** enforce rules mechanically via Claude Code's hook API:
+**15 hooks** enforce rules mechanically via Claude Code's hook API:
 
 | Hook | Zone | Type | What it does |
 |------|------|------|-------------|
 | **session-start** | Discovery | Context | Activates enforcement zones, checks dependencies, outputs terse zone report |
 | **enforce-superpowers** | Design | Blocking | Blocks source file edits without invoking the Superpowers workflow |
-| **skill-tracker** | Design | Passive | Creates superpowers/has_plan markers when Superpowers skills are invoked |
 | **enforce-plan-tracking** | Planning | Blocking | Blocks source edits until a plan task is marked in_progress |
-| **plan-tracker** | Planning | Passive | Creates/clears plan_active marker on TaskUpdate calls |
 | **enforce-context7** | Implementation | Blocking | Blocks edits using unresearched third-party libraries (Context7 MCP) |
-| **context7-tracker** | Implementation | Passive | Creates per-library markers when Context7 MCP is queried |
 | **enforce-evaluate** | Verification | Blocking | Blocks commits without presenting evaluation and getting user approval |
 | **pre-commit-checks** | Verification | Blocking | Blocks commits missing version bumps or changelog updates |
 | **verification-gate** | Verification | Blocking | Runs configurable pre-commit quality gates (linter, type-check, visual auditor) |
 | **branch-safety** | Verification | Blocking | Blocks pushes to protected branches |
 | **stop-checklist** | — | Blocking | Blocks session end with uncommitted work, untested bug fixes, or missing plan closure |
 | **marker-guard** | — | Blocking | Prevents manual creation of workflow markers via touch commands |
-| **sync-tracker** | — | Passive | Clears markers after commits, tracks sync operations |
+| **marker-tracker** | — | Passive | Unified PostToolUse marker management: skill/plan/context7/sync tracking |
 | **pre-compact-reminder** | — | Advisory | Warns to save context history before compression |
 | **changelog-sync-check** | — | Advisory | Warns before editing stale changelogs |
 | **scalability-check** | — | Advisory | Reminds about future platform plans when editing architecture |

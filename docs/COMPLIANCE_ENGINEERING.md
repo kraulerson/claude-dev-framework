@@ -50,7 +50,7 @@ Layer 3: Information Denial (marker paths hidden from Claude)
 Layer 4: Command Interception (marker-guard.sh blocks touch on markers)
   │ Hole: Claude could create markers through other bash constructs.
   │
-Layer 5: Automatic Marker Creation (skill-tracker.sh)
+Layer 5: Automatic Marker Creation (marker-tracker.sh)
   │ Hole: Depends on Claude Code exposing Skill invocations as hook events.
   │
 Layer 6: Anti-Rationalization Messages (explicit DO NOTs in block output)
@@ -100,9 +100,9 @@ A `PreToolUse:Bash` hook that fires before any bash command. If the command atte
 **Why PreToolUse, not PostToolUse:** PreToolUse blocks the command before execution. PostToolUse can only detect and revert after execution — the marker briefly exists, which creates a race condition.
 
 ### Layer 5 — Automatic Marker Creation
-**File:** `hooks/skill-tracker.sh`
+**File:** `hooks/marker-tracker.sh`
 
-A `PostToolUse` hook (no matcher — fires on all tool uses) that detects when the Skill tool invokes a Superpowers skill. When detected, it creates the superpowers marker automatically.
+A `PostToolUse` hook (no matcher — fires on all tool uses) that manages all workflow markers. Detects Superpowers skill invocations, TaskUpdate status changes, Context7 MCP queries, and post-commit cleanup. Creates markers automatically so Claude never needs to (or can) create them manually.
 
 **Why automatic:** If Claude must create the marker manually, it can create it without completing the workflow. If the framework creates it automatically on skill invocation, the only way to get the marker is to actually invoke the skill.
 
@@ -143,9 +143,9 @@ v4.0.0 organizes the 8 defense layers into five **enforcement zones** representi
 | Zone | Stage | Hooks | What It Gates |
 |------|-------|-------|---------------|
 | **Discovery** | Session start | session-start.sh | Dependency verification, zone activation |
-| **Design** | Before any source edit | enforce-superpowers.sh, skill-tracker.sh | Write/Edit blocked until Superpowers skill invoked |
-| **Planning** | After design, before implementation | enforce-plan-tracking.sh, plan-tracker.sh | Write/Edit blocked until plan task is in_progress |
-| **Implementation** | During edits | enforce-context7.sh, context7-tracker.sh | Blocks edits using unresearched third-party libraries |
+| **Design** | Before any source edit | enforce-superpowers.sh, marker-tracker.sh | Write/Edit blocked until Superpowers skill invoked |
+| **Planning** | After design, before implementation | enforce-plan-tracking.sh, marker-tracker.sh | Write/Edit blocked until plan task is in_progress |
+| **Implementation** | During edits | enforce-context7.sh, marker-tracker.sh | Blocks edits using unresearched third-party libraries |
 | **Verification** | Pre-commit | verification-gate.sh, enforce-evaluate.sh, pre-commit-checks.sh | Configurable quality gates + existing checks |
 
 ### Why Zones?

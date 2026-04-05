@@ -5,9 +5,9 @@
 | Zone | Hooks | Purpose |
 |------|-------|---------|
 | Discovery | session-start.sh | Dependency checks, zone activation, Context7 install |
-| Design | enforce-superpowers.sh, skill-tracker.sh | Blocks edits until Superpowers skill invoked |
-| Planning | enforce-plan-tracking.sh, plan-tracker.sh | Blocks edits until plan task is in_progress |
-| Implementation | enforce-context7.sh, context7-tracker.sh | Blocks edits using unresearched libraries |
+| Design | enforce-superpowers.sh, marker-tracker.sh | Blocks edits until Superpowers skill invoked |
+| Planning | enforce-plan-tracking.sh, marker-tracker.sh | Blocks edits until plan task is in_progress |
+| Implementation | enforce-context7.sh, marker-tracker.sh | Blocks edits using unresearched libraries |
 | Verification | enforce-evaluate.sh, pre-commit-checks.sh, verification-gate.sh | Pre-commit quality gates |
 
 ---
@@ -66,7 +66,7 @@
 - **Event:** PreToolUse (Write|Edit)
 - **Blocking:** Advisory (JSON additionalContext)
 - **Purpose:** Warns before editing changelog if upstream changes exist
-- **Marker:** `/tmp/.claude_changelog_synced_{hash}` — created by sync-tracker
+- **Marker:** `/tmp/.claude_changelog_synced_{hash}` — created by marker-tracker
 - **Disable:** Remove `changelog-sync-check` from `manifest.json → activeHooks`
 
 ## scalability-check.sh
@@ -83,19 +83,13 @@
 - **Configured by:** `manifest.json → discovery → deployCommands` (custom deploy commands)
 - **Disable:** Remove `pre-deploy-check` from `manifest.json → activeHooks`
 
-## sync-tracker.sh
-- **Event:** PostToolUse (Bash)
-- **Blocking:** No
-- **Purpose:** Creates changelog sync marker when sync scripts succeed; clears evaluation/superpowers/plan_active markers after successful commit
-- **Disable:** Remove `sync-tracker` from `manifest.json → activeHooks`
-
-## skill-tracker.sh
+## marker-tracker.sh
 - **Event:** PostToolUse (all tools)
-- **Zone:** Design + Planning
+- **Zone:** Design + Planning + Implementation
 - **Blocking:** No
-- **Purpose:** Automatically creates superpowers marker when Superpowers skill is invoked; creates has_plan marker when writing-plans is invoked
-- **Markers:** `.claude_superpowers_{hash}`, `.claude_has_plan_{hash}`
-- **Disable:** Remove `skill-tracker` from `manifest.json → activeHooks`
+- **Purpose:** Unified PostToolUse marker management. Creates superpowers/has_plan markers on Superpowers skill invoke; creates/clears plan_active marker on TaskUpdate; creates per-library c7 markers on Context7 MCP queries; creates changelog_synced marker on sync scripts; clears evaluation/superpowers/plan_active markers after successful commit
+- **Markers:** `.claude_superpowers_{hash}`, `.claude_has_plan_{hash}`, `.claude_plan_active_{hash}`, `.claude_c7_{hash}_{library}`, `.claude_changelog_synced_{hash}`
+- **Disable:** Remove `marker-tracker` from `manifest.json → activeHooks`
 
 ## marker-guard.sh
 - **Event:** PreToolUse (Bash)
@@ -110,15 +104,8 @@
 - **Blocking:** Yes (exit 2)
 - **Purpose:** Blocks source file edits until a plan task is marked in_progress via TaskUpdate
 - **Skips:** Docs, config, test files; also skips if no `has_plan` marker exists (zone not armed)
-- **Marker:** `/tmp/.claude_plan_active_{hash}` — created by plan-tracker.sh when TaskUpdate sets status to in_progress
+- **Marker:** `/tmp/.claude_plan_active_{hash}` — created by marker-tracker.sh when TaskUpdate sets status to in_progress
 - **Disable:** Remove `enforce-plan-tracking` from `manifest.json → activeHooks`
-
-## plan-tracker.sh
-- **Event:** PostToolUse (all tools)
-- **Zone:** Planning
-- **Blocking:** No
-- **Purpose:** Creates plan_active marker when TaskUpdate sets a task to in_progress; clears it when a task is set to completed
-- **Disable:** Remove `plan-tracker` from `manifest.json → activeHooks`
 
 ## enforce-context7.sh
 - **Event:** PreToolUse (Write|Edit)
@@ -126,15 +113,8 @@
 - **Blocking:** Yes (exit 2)
 - **Purpose:** Scans code being written for import/require statements. Blocks if any third-party library hasn't been researched via Context7 MCP.
 - **Skips:** Docs, config, test files; standard library imports (known-stdlib.txt); relative imports; degraded mode
-- **Marker:** `/tmp/.claude_c7_{hash}_{library}` — one per researched library, created by context7-tracker.sh
+- **Marker:** `/tmp/.claude_c7_{hash}_{library}` — one per researched library, created by marker-tracker.sh
 - **Disable:** Remove `enforce-context7` from `manifest.json → activeHooks`
-
-## context7-tracker.sh
-- **Event:** PostToolUse (all tools)
-- **Zone:** Implementation
-- **Blocking:** No
-- **Purpose:** Watches for Context7 MCP tool calls (resolve-library-id, get-library-docs) and creates per-library markers
-- **Disable:** Remove `context7-tracker` from `manifest.json → activeHooks`
 
 ## verification-gate.sh
 - **Event:** PreToolUse (Bash)

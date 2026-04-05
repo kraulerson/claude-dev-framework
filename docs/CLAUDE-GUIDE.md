@@ -28,7 +28,7 @@ As you work, hooks fire at two points:
 - `branch-safety.sh` **blocks** `git push` to protected branches.
 
 **After running bash commands** (`PostToolUse: Bash`):
-- `sync-tracker.sh` silently creates markers when sync scripts succeed and clears evaluation/superpowers markers after a successful `git commit` (so you go through the workflow again for the next change).
+- `marker-tracker.sh` silently creates markers when sync scripts succeed and clears evaluation/superpowers markers after a successful `git commit` (so you go through the workflow again for the next change).
 
 ### 3. Session End
 
@@ -56,7 +56,7 @@ Markers are temporary files in `/tmp/` that track workflow completion. They are 
 | `.claude_changelog_synced_{hash}` | Sync script succeeds (automatic) | Not auto-cleared | `changelog-sync-check.sh` |
 | `.claude_plan_closed_{hash}` | You document plan closure, then run `touch` | Session ends | `stop-checklist.sh` |
 
-**Important**: The evaluation and Superpowers markers clear after each commit (via `sync-tracker.sh`). This means for each new piece of work in a session, you must go through those workflows again. This is intentional — it prevents a single approval from covering unrelated changes. Other markers have different lifecycles (see the "Cleared when" column above).
+**Important**: The evaluation and Superpowers markers clear after each commit (via `marker-tracker.sh`). This means for each new piece of work in a session, you must go through those workflows again. This is intentional — it prevents a single approval from covering unrelated changes. Other markers have different lifecycles (see the "Cleared when" column above).
 
 ## Responding to Advisories
 
