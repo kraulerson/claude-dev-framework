@@ -63,13 +63,8 @@ suggest_profile() {
     *node*) echo "web-api"; return ;;
   esac
 
-  # CLI
-  case "$signals" in
-    *rust*) echo "cli-tool"; return ;;
-    *python*) echo "cli-tool"; return ;;
-    *go*) echo "cli-tool"; return ;;
-    *cmake*) echo "cli-tool"; return ;;
-  esac
+  # Standalone language signals without web/mobile framework — no suggestion
+  # (user will be prompted to select or create a profile)
 
   echo ""
 }
@@ -80,10 +75,10 @@ SIGNALS=$(detect_signals)
 SUGGESTED=$(suggest_profile "$SIGNALS")
 
 if [ -n "$SUGGESTED" ]; then
-  echo "Detected signals: $SIGNALS"
-  echo "Suggested profile: $SUGGESTED"
-  echo ""
-  echo "Available profiles:"
+  echo "Detected signals: $SIGNALS" >&2
+  echo "Suggested profile: $SUGGESTED" >&2
+  echo "" >&2
+  echo "Available profiles:" >&2
   for f in "$PROFILES_DIR"/*.yml; do
     [ -f "$f" ] || continue
     name=$(basename "$f" .yml)
@@ -91,9 +86,9 @@ if [ -n "$SUGGESTED" ]; then
     desc=$(grep '^description:' "$f" | sed 's/description: //')
     marker=""
     [ "$name" = "$SUGGESTED" ] && marker=" ← suggested"
-    echo "  - $name: $desc$marker"
+    echo "  - $name: $desc$marker" >&2
   done
-  echo ""
+  echo "" >&2
   read -rp "Use '$SUGGESTED'? (y/n/other profile name): " choice
   case "$choice" in
     y|Y|yes|"") echo "$SUGGESTED" ;;
@@ -104,18 +99,18 @@ if [ -n "$SUGGESTED" ]; then
     *) echo "$choice" ;;
   esac
 else
-  echo "No recognized project signals found."
-  echo ""
-  echo "Available profiles:"
+  echo "No recognized project signals found." >&2
+  echo "" >&2
+  echo "Available profiles:" >&2
   for f in "$PROFILES_DIR"/*.yml; do
     [ -f "$f" ] || continue
     name=$(basename "$f" .yml)
     [ "$name" = "_base" ] && continue
     desc=$(grep '^description:' "$f" | sed 's/description: //')
-    echo "  - $name: $desc"
+    echo "  - $name: $desc" >&2
   done
-  echo ""
-  read -rp "What type of project is this? Enter a profile name from above (or 'new' to create one): " choice
+  echo "" >&2
+  read -rp "Select a profile (web-app, web-api, mobile-app, or 'new' to create one): " choice
   if [ "$choice" = "new" ]; then
     read -rp "What kind of project is this? " project_type
     PROFILE_NAME=$(echo "$project_type" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd 'a-z0-9-')

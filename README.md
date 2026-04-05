@@ -10,7 +10,7 @@ The current version (v4.0.0) organizes enforcement into **5 enforcement zones** 
 
 The framework was designed from the ground up around three principles that distinguish it from other Claude Code workflow tools:
 
-**1. Central sync with per-project customization.** A single upstream repo (`~/.claude-dev-framework/`) syncs hooks and rules to every project on every machine. Projects inherit from profiles (`mobile-app`, `web-api`, `cli-tool`) and can override anything locally. Changes to the framework propagate to all projects via `sync.sh` with three-way conflict detection.
+**1. Central sync with per-project customization.** A single upstream repo (`~/.claude-dev-framework/`) syncs hooks and rules to every project on every machine. Projects inherit from profiles (`web-app`, `web-api`, `mobile-app`) and can override anything locally. Changes to the framework propagate to all projects via `sync.sh` with three-way conflict detection.
 
 **2. Discovery-driven, not one-size-fits-all.** The framework interviews you about your project — what data it handles, how it's deployed, what platforms it targets, what APIs it uses — and tailors its testing strategy, security assessment, and enforcement to your actual risk profile. A locally-hosted utility tool gets basic functional tests. A mobile app with user accounts, payment processing, and app store distribution gets encrypted storage, auth flow testing, and compliance checks.
 
@@ -123,8 +123,8 @@ evaluate-before-implement, plan-before-code, test-per-bugfix, test-strategy, nam
 
 ## Profiles
 
-**5 profiles** for different project types (extensible):
-`_base` (always active), `mobile-app`, `web-app`, `web-api`, `cli-tool`
+**4 profiles** for different project types (extensible):
+`_base` (always active), `web-app`, `web-api`, `mobile-app`
 
 Profiles use YAML inheritance — all profiles inherit from `_base`, which provides the universal rules and hooks. Project-type profiles add domain-specific rules, hooks, and discovery questions.
 
