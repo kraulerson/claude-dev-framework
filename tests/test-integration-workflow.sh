@@ -55,9 +55,9 @@ test_full_session_lifecycle() {
   # Actually commit
   git -C "$TEST_DIR" commit -m "Add feature" --quiet
 
-  # --- Phase 6: Sync-tracker clears markers after commit ---
-  POST_COMMIT='{"tool_input":{"command":"git commit -m \"Add feature\""},"tool_response":{"exit_code":"0"}}'
-  run_hook "$HOOK_DIR/sync-tracker.sh" "$POST_COMMIT" >/dev/null
+  # --- Phase 6: Marker-tracker clears markers after commit ---
+  POST_COMMIT='{"tool_name":"Bash","tool_input":{"command":"git commit -m \"Add feature\""},"tool_response":{"exit_code":"0"}}'
+  run_hook "$HOOK_DIR/marker-tracker.sh" "$POST_COMMIT" >/dev/null
   assert_file_not_exists "/tmp/.claude_evaluated_${TEST_HASH}" "eval marker should be cleared after commit"
   assert_file_not_exists "/tmp/.claude_superpowers_${TEST_HASH}" "superpowers marker should be cleared after commit"
 
@@ -83,12 +83,12 @@ test_v4_full_lifecycle() {
 
   # 2. Simulate brainstorming skill -> superpowers marker
   INPUT_SKILL='{"tool_name":"Skill","tool_input":{"skill":"superpowers:brainstorming"}}'
-  run_hook "$HOOK_DIR/skill-tracker.sh" "$INPUT_SKILL" >/dev/null 2>&1
+  run_hook "$HOOK_DIR/marker-tracker.sh" "$INPUT_SKILL" >/dev/null 2>&1
   assert_file_exists "/tmp/.claude_superpowers_${TEST_HASH}" "v4: brainstorming should create superpowers marker"
 
   # 3. Simulate writing-plans skill -> has_plan marker
   INPUT_PLAN='{"tool_name":"Skill","tool_input":{"skill":"superpowers:writing-plans"}}'
-  run_hook "$HOOK_DIR/skill-tracker.sh" "$INPUT_PLAN" >/dev/null 2>&1
+  run_hook "$HOOK_DIR/marker-tracker.sh" "$INPUT_PLAN" >/dev/null 2>&1
   assert_file_exists "/tmp/.claude_has_plan_${TEST_HASH}" "v4: writing-plans should create has_plan marker"
 
   # 4. Source edit should be blocked by Planning Zone (has_plan but no plan_active)
@@ -97,7 +97,7 @@ test_v4_full_lifecycle() {
 
   # 5. Simulate TaskUpdate to in_progress -> plan_active marker
   INPUT_TASK='{"tool_name":"TaskUpdate","tool_input":{"taskId":"1","status":"in_progress"}}'
-  run_hook "$HOOK_DIR/plan-tracker.sh" "$INPUT_TASK" >/dev/null 2>&1
+  run_hook "$HOOK_DIR/marker-tracker.sh" "$INPUT_TASK" >/dev/null 2>&1
   assert_file_exists "/tmp/.claude_plan_active_${TEST_HASH}" "v4: TaskUpdate should create plan_active marker"
 
   # 6. Source edit should now pass both gates
@@ -107,11 +107,11 @@ test_v4_full_lifecycle() {
   assert_exit_code "0" "$EXIT_CODE" "v4: should pass plan-tracking with marker"
 
   # 7. Simulate commit -> markers cleared
-  INPUT_COMMIT='{"tool_input":{"command":"git commit -m \"feat: test\""},"tool_response":{"exit_code":"0"}}'
+  INPUT_COMMIT='{"tool_name":"Bash","tool_input":{"command":"git commit -m \"feat: test\""},"tool_response":{"exit_code":"0"}}'
   echo "# code" > "$TEST_DIR/app.py"
   git -C "$TEST_DIR" add app.py
   git -C "$TEST_DIR" commit -m "feat: test" --quiet
-  run_hook "$HOOK_DIR/sync-tracker.sh" "$INPUT_COMMIT" >/dev/null 2>&1
+  run_hook "$HOOK_DIR/marker-tracker.sh" "$INPUT_COMMIT" >/dev/null 2>&1
   assert_file_not_exists "/tmp/.claude_superpowers_${TEST_HASH}" "v4: commit should clear superpowers marker"
   assert_file_not_exists "/tmp/.claude_plan_active_${TEST_HASH}" "v4: commit should clear plan_active marker"
   assert_file_exists "/tmp/.claude_has_plan_${TEST_HASH}" "v4: commit should NOT clear has_plan marker"
