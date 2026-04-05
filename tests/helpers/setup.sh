@@ -22,7 +22,7 @@ setup_test_project() {
   "frameworkVersion": "1.1.0",
   "profile": "mobile-app",
   "activeRules": ["evaluate-before-implement", "test-per-bugfix"],
-  "activeHooks": ["enforce-evaluate", "stop-checklist", "sync-tracker"],
+  "activeHooks": ["enforce-evaluate", "stop-checklist", "marker-tracker"],
   "projectConfig": {
     "_base": {
       "sourceExtensions": [".py", ".js", ".ts", ".kt", ".swift"],

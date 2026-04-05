@@ -21,15 +21,12 @@ generate_settings_json() {
       stop-checklist)       event="Stop";         matcher="" ;;
       pre-compact-reminder) event="PreCompact";   matcher="" ;;
       changelog-sync-check) event="PreToolUse";   matcher="Write|Edit" ;;
-      sync-tracker)         event="PostToolUse";  matcher="Bash" ;;
-      skill-tracker)        event="PostToolUse";  matcher="" ;;
+      marker-tracker)       event="PostToolUse";  matcher="" ;;
       scalability-check)    event="PreToolUse";   matcher="Write|Edit" ;;
       pre-deploy-check)     event="PreToolUse";   matcher="Bash" ;;
       marker-guard)         event="PreToolUse";   matcher="Bash" ;;
       enforce-plan-tracking) event="PreToolUse";  matcher="Write|Edit" ;;
-      plan-tracker)          event="PostToolUse";  matcher="" ;;
       enforce-context7)      event="PreToolUse";   matcher="Write|Edit" ;;
-      context7-tracker)      event="PostToolUse";  matcher="" ;;
       verification-gate)     event="PreToolUse";   matcher="Bash" ;;
       *) continue ;;
     esac

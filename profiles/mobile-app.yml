@@ -12,7 +12,6 @@ hooks:
   - pre-commit-checks
   - branch-safety
   - changelog-sync-check
-  - sync-tracker
   - scalability-check
   - pre-deploy-check
 

@@ -34,16 +34,8 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/sync-tracker.sh" }
-        ]
-      },
-      {
-        "hooks": [
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/skill-tracker.sh" },
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/plan-tracker.sh" },
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/context7-tracker.sh" }
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/marker-tracker.sh" }
         ]
       }
     ],
