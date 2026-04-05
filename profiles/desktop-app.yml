@@ -1,0 +1,31 @@
+name: desktop-app
+description: Desktop applications (Qt, Electron, native GUI) — PySide6, PyMuPDF, Nuitka packaging
+inherits: _base
+
+rules:
+  - version-bump
+  - changelog-update
+  - future-scalability
+
+hooks:
+  - pre-commit-checks
+  - branch-safety
+
+discovery_questions:
+  - key: uiFramework
+    question: "What UI framework is this desktop app built with?"
+    examples: "PySide6/Qt, Electron, Tauri, GTK, wxPython, native (Cocoa/Win32)"
+  - key: targetPlatforms
+    question: "What platforms does this app target?"
+    examples: "Windows, macOS, Linux, all three"
+  - key: packaging
+    question: "How is this app packaged for distribution?"
+    examples: "Nuitka, PyInstaller, Electron Builder, native installer"
+  - key: distribution
+    question: "How is this app distributed?"
+    examples: "GitHub Releases, app stores, direct download, internal only"
+
+suggests:
+  changelogFile: "CHANGELOG.md"
+  protectedBranches: ["main", "master"]
+  sourceExtensions: [".py", ".qss", ".ui", ".qrc"]

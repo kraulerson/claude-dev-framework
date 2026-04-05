@@ -23,6 +23,10 @@ detect_signals() {
   if [ -f "pyproject.toml" ] || [ -f "requirements.txt" ] || [ -f "setup.py" ]; then
     signals="${signals}python "
     grep -qiE 'fastapi|django|flask|starlette|sanic' requirements.txt pyproject.toml setup.py 2>/dev/null && signals="${signals}pyweb "
+    grep -qiE 'pyside6|pyside2|pyqt5|pyqt6|wxpython|pygobject|tkinter|nuitka|pyinstaller' requirements.txt pyproject.toml setup.py 2>/dev/null && signals="${signals}pydesktop "
+  fi
+  if [ -f "package.json" ]; then
+    grep -qiE '"(electron|tauri)"' package.json 2>/dev/null && signals="${signals}electrondesktop "
   fi
   [ -f "go.mod" ] && signals="${signals}go "
   [ -f "Gemfile" ] && signals="${signals}ruby "
@@ -63,8 +67,10 @@ suggest_profile() {
     *node*) echo "web-api"; return ;;
   esac
 
-  # Standalone language signals without web/mobile framework — no suggestion
-  # (user will be prompted to select or create a profile)
+  # Desktop app
+  case "$signals" in
+    *pydesktop*|*electrondesktop*) echo "desktop-app"; return ;;
+  esac
 
   echo ""
 }
@@ -110,7 +116,7 @@ else
     echo "  - $name: $desc" >&2
   done
   echo "" >&2
-  read -rp "Select a profile (web-app, web-api, mobile-app, or 'new' to create one): " choice
+  read -rp "Select a profile (web-app, web-api, mobile-app, desktop-app, or 'new' to create one): " choice
   if [ "$choice" = "new" ]; then
     read -rp "What kind of project is this? " project_type
     PROFILE_NAME=$(echo "$project_type" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd 'a-z0-9-')
