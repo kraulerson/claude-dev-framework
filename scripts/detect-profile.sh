@@ -75,6 +75,19 @@ suggest_profile() {
   echo ""
 }
 
+# If a profile name was passed as an argument, validate and return immediately
+if [ -n "${1:-}" ]; then
+  REQUESTED="$1"
+  if [ -f "$PROFILES_DIR/${REQUESTED}.yml" ]; then
+    echo "$REQUESTED"
+    exit 0
+  else
+    echo "ERROR: Profile '$REQUESTED' not found in $PROFILES_DIR" >&2
+    echo "Available: $(ls "$PROFILES_DIR"/*.yml 2>/dev/null | xargs -I{} basename {} .yml | grep -v _base | tr '\n' ' ')" >&2
+    exit 1
+  fi
+fi
+
 echo "=== Profile Detection ==="
 echo ""
 SIGNALS=$(detect_signals)

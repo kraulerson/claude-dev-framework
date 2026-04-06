@@ -6,7 +6,7 @@ FRAMEWORK_CLONE="$HOME/.claude-dev-framework"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # ---- Flags ----
-MIGRATE=false; RECONFIGURE=false; ARCHIVE=false; SKIP_PLUGINS=false; PREPOPULATE_FILE=""
+MIGRATE=false; RECONFIGURE=false; ARCHIVE=false; SKIP_PLUGINS=false; PREPOPULATE_FILE=""; PROFILE_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --migrate) MIGRATE=true ;;
@@ -14,6 +14,7 @@ while [ $# -gt 0 ]; do
     --archive) ARCHIVE=true ;;
     --skip-plugin-check) SKIP_PLUGINS=true ;;
     --prepopulate) shift; PREPOPULATE_FILE="${1:-}" ;;
+    --profile) shift; PROFILE_ARG="${1:-}" ;;
   esac
   shift
 done
@@ -330,7 +331,11 @@ if [ -d "$FRAMEWORK_CLONE/gates" ]; then
 fi
 
 # Detect profile (runs for all paths — clean, migration, and reconfigure)
-PROFILE=$(bash "$FRAMEWORK_CLONE/scripts/detect-profile.sh" | tail -1)
+if [ -n "$PROFILE_ARG" ]; then
+  PROFILE=$(bash "$FRAMEWORK_CLONE/scripts/detect-profile.sh" "$PROFILE_ARG" | tail -1)
+else
+  PROFILE=$(bash "$FRAMEWORK_CLONE/scripts/detect-profile.sh" | tail -1)
+fi
 
 # Parse profile to get rules and hooks
 ALL_RULES=()
