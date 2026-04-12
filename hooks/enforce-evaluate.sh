@@ -8,6 +8,17 @@ INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || echo "")
 echo "$COMMAND" | grep -qE '\bgit\b.*\bcommit\b' || exit 0
 
+# Block --no-verify (bypasses git security hooks)
+if echo "$COMMAND" | grep -qE '\bgit\b.*\bcommit\b.*--no-verify'; then
+  printf "BLOCKED — The --no-verify flag bypasses security hooks (gitleaks, Semgrep). Remove --no-verify and commit normally.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second. There is no task small enough to skip this requirement." >&2
+  exit 2
+fi
+
+# Warn on --amend (rewrites commit history)
+if echo "$COMMAND" | grep -qE '\bgit\b.*\bcommit\b.*--amend'; then
+  printf "WARNING — git commit --amend rewrites the previous commit. Ensure the amended content has been through the full workflow. If this amend adds new source code, consider a new commit instead.\n" >&2
+fi
+
 HASH=$(get_project_hash)
 [ -f "/tmp/.claude_evaluated_${HASH}" ] && exit 0
 

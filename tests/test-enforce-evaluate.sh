@@ -37,6 +37,28 @@ test_commit_with_marker() {
   teardown_test_project
 }
 
+# --- Test: --no-verify blocked ---
+test_no_verify_blocked() {
+  setup_test_project
+  touch "/tmp/.claude_evaluated_${TEST_HASH}"
+  INPUT='{"tool_input":{"command":"git commit --no-verify -m \"bypass hooks\""}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "--no-verify should block even with evaluate marker"
+  teardown_test_project
+}
+
+# --- Test: --amend warns but allows ---
+test_amend_warns() {
+  setup_test_project
+  touch "/tmp/.claude_evaluated_${TEST_HASH}"
+  INPUT='{"tool_input":{"command":"git commit --amend -m \"rewrite\""}}'
+  RESULT=$(run_hook "$HOOK" "$INPUT")
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "0" "$EXIT_CODE" "--amend should allow (advisory only)"
+  assert_contains "$RESULT" "WARNING" "--amend should produce a warning"
+  teardown_test_project
+}
+
 # --- Test: chained git commit still blocks ---
 test_chained_commit_blocks() {
   setup_test_project
@@ -52,4 +74,6 @@ test_non_commit_passthrough
 test_commit_without_marker
 test_commit_with_marker
 test_chained_commit_blocks
+test_no_verify_blocked
+test_amend_warns
 run_tests
