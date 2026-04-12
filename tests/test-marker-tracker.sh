@@ -122,6 +122,33 @@ test_normalizes_scoped_names() {
   teardown_test_project
 }
 
+# --- Test: creates marker on plugin-prefixed resolve-library-id call ---
+test_creates_marker_on_plugin_resolve() {
+  setup_test_project
+  INPUT='{"tool_name":"mcp__plugin_context7_context7__resolve-library-id","tool_input":{"libraryName":"express"}}'
+  run_hook "$HOOK" "$INPUT" >/dev/null 2>&1
+  assert_file_exists "/tmp/.claude_c7_${TEST_HASH}_express" "plugin-prefixed resolve should create c7 marker"
+  teardown_test_project
+}
+
+# --- Test: creates marker on plugin-prefixed get-library-docs call ---
+test_creates_marker_on_plugin_get_docs() {
+  setup_test_project
+  INPUT='{"tool_name":"mcp__plugin_context7_context7__get-library-docs","tool_input":{"context7CompatibleLibraryID":"/expressjs/express","topic":"routing"}}'
+  run_hook "$HOOK" "$INPUT" >/dev/null 2>&1
+  assert_file_exists "/tmp/.claude_c7_${TEST_HASH}_expressjs-express" "plugin-prefixed get-docs should create c7 marker"
+  teardown_test_project
+}
+
+# --- Test: creates marker on query-docs call ---
+test_creates_marker_on_query_docs() {
+  setup_test_project
+  INPUT='{"tool_name":"mcp__context7__query-docs","tool_input":{"context7CompatibleLibraryID":"/facebook/react","topic":"hooks"}}'
+  run_hook "$HOOK" "$INPUT" >/dev/null 2>&1
+  assert_file_exists "/tmp/.claude_c7_${TEST_HASH}_facebook-react" "query-docs should create c7 marker"
+  teardown_test_project
+}
+
 # --- Test: ignores non-Context7 tools for c7 markers ---
 test_ignores_other_tools_for_c7() {
   setup_test_project
@@ -240,6 +267,9 @@ test_task_update_no_status
 # Context7 tracking
 test_creates_marker_on_resolve
 test_creates_marker_on_get_docs
+test_creates_marker_on_plugin_resolve
+test_creates_marker_on_plugin_get_docs
+test_creates_marker_on_query_docs
 test_normalizes_scoped_names
 test_ignores_other_tools_for_c7
 test_ignores_skill_tool_for_c7

@@ -46,13 +46,13 @@ case "$TOOL" in
     ;;
 
   # --- Context7 tracking (was context7-tracker.sh) ---
-  mcp__context7__resolve-library-id|mcp__context7__resolve_library_id)
+  mcp__context7__resolve-library-id|mcp__context7__resolve_library_id|mcp__plugin_context7_context7__resolve-library-id|mcp__plugin_context7_context7__resolve_library_id)
     LIB=$(echo "$INPUT" | jq -r '.tool_input.libraryName // empty' 2>/dev/null || echo "")
     [ -z "$LIB" ] && exit 0
     NORMALIZED=$(echo "$LIB" | tr '[:upper:]' '[:lower:]' | sed 's|^[@/]*||' | tr '/' '-')
     touch "/tmp/.claude_c7_${HASH}_${NORMALIZED}"
     ;;
-  mcp__context7__get-library-docs|mcp__context7__get_library_docs)
+  mcp__context7__get-library-docs|mcp__context7__get_library_docs|mcp__plugin_context7_context7__get-library-docs|mcp__plugin_context7_context7__get_library_docs|mcp__context7__query-docs|mcp__plugin_context7_context7__query-docs)
     LIB=$(echo "$INPUT" | jq -r '.tool_input.context7CompatibleLibraryID // empty' 2>/dev/null || echo "")
     [ -z "$LIB" ] && exit 0
     NORMALIZED=$(echo "$LIB" | tr '[:upper:]' '[:lower:]' | sed 's|^[@/]*||' | tr '/' '-')
