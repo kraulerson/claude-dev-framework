@@ -25,6 +25,7 @@ generate_settings_json() {
       scalability-check)    event="PreToolUse";   matcher="Write|Edit" ;;
       pre-deploy-check)     event="PreToolUse";   matcher="Bash" ;;
       marker-guard)         event="PreToolUse";   matcher="Bash" ;;
+      config-guard)         event="PreToolUse";   matcher="Bash|Write|Edit" ;;
       enforce-plan-tracking) event="PreToolUse";  matcher="Write|Edit" ;;
       enforce-context7)      event="PreToolUse";   matcher="Write|Edit" ;;
       verification-gate)     event="PreToolUse";   matcher="Bash" ;;

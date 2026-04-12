@@ -33,6 +33,7 @@ discovery_questions:
 
 hooks:
   - session-start
+  - config-guard
   - enforce-evaluate
   - enforce-superpowers
   - stop-checklist
