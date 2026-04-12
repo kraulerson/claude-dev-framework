@@ -22,9 +22,9 @@
 
 ## enforce-evaluate.sh
 - **Event:** PreToolUse (Bash)
-- **Blocking:** Advisory (JSON additionalContext)
-- **Purpose:** Injects reminder if `git commit` runs without an evaluation marker
-- **Marker:** `/tmp/.claude_evaluated_{hash}` — created when evaluation is approved
+- **Blocking:** Yes (exit 2)
+- **Purpose:** Blocks `git commit` without an evaluation marker. Also blocks `git commit --no-verify` (which would bypass git security hooks). Warns advisory on `git commit --amend`.
+- **Marker:** `/tmp/.claude_evaluated_{hash}` — created by `mark-evaluated.sh` when evaluation is approved
 - **Disable:** Remove `enforce-evaluate` from `manifest.json → activeHooks`
 
 ## enforce-superpowers.sh
@@ -45,7 +45,7 @@
 ## branch-safety.sh
 - **Event:** PreToolUse (Bash)
 - **Blocking:** Yes (exit 2)
-- **Purpose:** Blocks `git push` to protected branches or outside allowed dev branches
+- **Purpose:** Blocks `git push` to protected branches, pushes outside allowed dev branches, and force pushes (`--force`, `-f`, `--force-with-lease`) on any branch
 - **Configured by:** `manifest.json → projectConfig → protectedBranches`, `devBranches`
 - **Disable:** Remove `branch-safety` from `manifest.json → activeHooks`
 
@@ -94,9 +94,16 @@
 ## marker-guard.sh
 - **Event:** PreToolUse (Bash)
 - **Blocking:** Yes (exit 2)
-- **Purpose:** Blocks manual creation of workflow markers via `touch` command. Prevents Claude from forging markers to bypass enforcement.
+- **Purpose:** Blocks any command that references workflow marker paths (`/tmp/.claude_*_*`), regardless of creation method (touch, echo redirect, cp, tee, dd, python, etc.). Prevents Claude from forging markers to bypass enforcement.
 - **Allowed:** `mark-evaluated.sh` script path
 - **Disable:** Remove `marker-guard` from `manifest.json → activeHooks`
+
+## config-guard.sh
+- **Event:** PreToolUse (Bash|Write|Edit)
+- **Blocking:** Yes (exit 2)
+- **Purpose:** Protects framework infrastructure from modification. Blocks: (1) Write/Edit on `.claude/settings.json`, `.claude/settings.local.json`, `.claude/manifest.json`, and any `.claude/framework/*` path; (2) Bash commands that modify framework config or hook files (sed, rm, chmod, echo redirect, etc.); (3) `CLAUDE_PROJECT_DIR=` environment variable assignments.
+- **Allowed:** Read-only Bash commands (cat/head/tail/grep/etc.) on framework files; `mark-evaluated.sh` script path
+- **Disable:** Remove `config-guard` from `manifest.json → activeHooks`
 
 ## enforce-plan-tracking.sh
 - **Event:** PreToolUse (Write|Edit)

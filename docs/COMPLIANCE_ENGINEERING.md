@@ -47,8 +47,8 @@ Layer 2: Blocking Hooks (exit 2 on Write/Edit and git commit)
 Layer 3: Information Denial (marker paths hidden from Claude)
   │ Hole: Claude may discover marker paths through code reading or error output.
   │
-Layer 4: Command Interception (marker-guard.sh blocks touch on markers)
-  │ Hole: Claude could create markers through other bash constructs.
+Layer 4: Command Interception (marker-guard.sh blocks any reference to marker paths)
+  │ Hole: Marker hash discovery via repeated bypass attempts.
   │
 Layer 5: Automatic Marker Creation (marker-tracker.sh)
   │ Hole: Depends on Claude Code exposing Skill invocations as hook events.
@@ -61,6 +61,9 @@ Layer 7: Rule Reinforcement (only user can decide to skip)
   │
 Layer 8: Session Audit (stop-checklist warns if workflow wasn't followed)
   │ Hole: Advisory only — warns but doesn't prevent session end.
+  │
+Layer 9: Meta-Attack Defense (config-guard.sh protects framework infrastructure)
+  │ Hole: Cannot prevent Claude from asking the user to disable enforcement.
 ```
 
 Each layer covers the holes in the layers above it. The combination makes bypass **significantly harder** than any single layer alone.
