@@ -6,7 +6,7 @@ source "$SCRIPT_DIR/_helpers.sh" 2>/dev/null || exit 1
 
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || echo "")
-echo "$COMMAND" | grep -qE '^\s*git\s+commit' || exit 0
+echo "$COMMAND" | grep -qE '\bgit\b.*\bcommit\b' || exit 0
 
 HASH=$(get_project_hash)
 [ -f "/tmp/.claude_evaluated_${HASH}" ] && exit 0

@@ -41,9 +41,24 @@ test_source_without_changelog_blocks() {
   teardown_test_project
 }
 
+# --- Test: chained git commit still triggers checks ---
+test_chained_commit_triggers_checks() {
+  setup_test_project
+  jq '.projectConfig._base.changelogFile = "CHANGELOG.md"' "$TEST_DIR/.claude/manifest.json" > "$TEST_DIR/.claude/manifest.json.tmp"
+  mv "$TEST_DIR/.claude/manifest.json.tmp" "$TEST_DIR/.claude/manifest.json"
+
+  echo "// code" > "$TEST_DIR/app.kt"
+  git -C "$TEST_DIR" add app.kt
+  INPUT='{"tool_input":{"command":"cd . && git commit -m \"bypass\""}}'
+  EXIT=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT" "chained commit should still trigger pre-commit checks"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "pre-commit-checks.sh"
 test_non_commit_passes
 test_doc_only_passes
 test_source_without_changelog_blocks
+test_chained_commit_triggers_checks
 run_tests

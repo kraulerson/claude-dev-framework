@@ -202,6 +202,40 @@ MANIFEST
   teardown_test_project
 }
 
+# --- Test: chained git commit still triggers gates ---
+test_chained_commit_triggers_gate() {
+  setup_test_project
+  local manifest="$TEST_DIR/.claude/manifest.json"
+  cat > "$manifest" << 'MANIFEST'
+{
+  "frameworkVersion": "4.0.0",
+  "profile": "web-app",
+  "activeRules": [],
+  "activeHooks": [],
+  "projectConfig": {
+    "_base": {
+      "verificationGates": [
+        {
+          "name": "always-fail",
+          "description": "Test gate that always fails",
+          "command": "exit 1",
+          "failOn": "exit_code",
+          "enabled": true,
+          "profile": "_base"
+        }
+      ]
+    },
+    "branches": []
+  },
+  "discovery": {}
+}
+MANIFEST
+  INPUT='{"tool_input":{"command":"cd . && git commit -m \"bypass\""}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "chained commit should still trigger gates"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "verification-gate.sh"
 test_non_commit_passes
@@ -211,4 +245,5 @@ test_failing_gate_exit_code
 test_failing_gate_stderr
 test_disabled_gate_skipped
 test_missing_command_skips
+test_chained_commit_triggers_gate
 run_tests

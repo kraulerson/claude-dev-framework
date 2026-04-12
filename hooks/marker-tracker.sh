@@ -68,7 +68,7 @@ case "$TOOL" in
       touch "/tmp/.claude_changelog_synced_${HASH}"
     fi
     # Clear evaluation/superpowers/plan_active markers after successful commit
-    if echo "$COMMAND" | grep -qE '^\s*git\s+commit' && [ "$EXIT_CODE" = "0" ]; then
+    if echo "$COMMAND" | grep -qE '\bgit\b.*\bcommit\b' && [ "$EXIT_CODE" = "0" ]; then
       rm -f "/tmp/.claude_evaluated_${HASH}"
       rm -f "/tmp/.claude_superpowers_${HASH}"
       rm -f "/tmp/.claude_plan_active_${HASH}"

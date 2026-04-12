@@ -6,7 +6,7 @@ source "$SCRIPT_DIR/_helpers.sh" 2>/dev/null || exit 1
 
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || echo "")
-echo "$COMMAND" | grep -qE '^\s*git\s+push' || exit 0
+echo "$COMMAND" | grep -qE '\bgit\b.*\bpush\b' || exit 0
 
 BRANCH=$(get_branch)
 

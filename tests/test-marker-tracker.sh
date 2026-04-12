@@ -196,6 +196,18 @@ test_markers_survive_non_commit() {
   teardown_test_project
 }
 
+# --- Test: chained commit still clears markers ---
+test_chained_commit_clears_markers() {
+  setup_test_project
+  touch "/tmp/.claude_evaluated_${TEST_HASH}"
+  touch "/tmp/.claude_superpowers_${TEST_HASH}"
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"cd . && git commit -m \"test\""},"tool_response":{"exit_code":"0"}}'
+  run_hook "$HOOK" "$INPUT" >/dev/null 2>&1
+  assert_file_not_exists "/tmp/.claude_evaluated_${TEST_HASH}" "chained commit should clear evaluated marker"
+  assert_file_not_exists "/tmp/.claude_superpowers_${TEST_HASH}" "chained commit should clear superpowers marker"
+  teardown_test_project
+}
+
 # --- Test: markers survive failed commit ---
 test_markers_survive_failed_commit() {
   setup_test_project
@@ -236,6 +248,7 @@ test_ignores_skill_tool_for_c7
 test_commit_clears_plan_active
 test_failed_commit_keeps_plan_active
 test_markers_cleared_after_commit
+test_chained_commit_clears_markers
 test_markers_survive_non_commit
 test_markers_survive_failed_commit
 

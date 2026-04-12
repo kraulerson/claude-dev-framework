@@ -37,9 +37,19 @@ test_push_dev_branch_passes() {
   teardown_test_project
 }
 
+# --- Test: chained git push from protected branch blocks ---
+test_chained_push_protected_blocks() {
+  setup_test_project
+  INPUT='{"tool_input":{"command":"echo ok && git push origin main"}}'
+  EXIT=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT" "chained push from protected branch should block"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "branch-safety.sh"
 test_non_push_passes
 test_push_protected_blocks
 test_push_dev_branch_passes
+test_chained_push_protected_blocks
 run_tests

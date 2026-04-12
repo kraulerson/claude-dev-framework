@@ -37,9 +37,19 @@ test_commit_with_marker() {
   teardown_test_project
 }
 
+# --- Test: chained git commit still blocks ---
+test_chained_commit_blocks() {
+  setup_test_project
+  INPUT='{"tool_input":{"command":"cd . && git commit -m \"bypass\""}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "chained git commit should still block"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "enforce-evaluate.sh"
 test_non_commit_passthrough
 test_commit_without_marker
 test_commit_with_marker
+test_chained_commit_blocks
 run_tests
