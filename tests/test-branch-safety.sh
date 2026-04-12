@@ -37,6 +37,38 @@ test_push_dev_branch_passes() {
   teardown_test_project
 }
 
+# --- Test: force push blocked on any branch ---
+test_force_push_blocked() {
+  setup_test_project
+  git -C "$TEST_DIR" checkout -b feature/test --quiet
+  INPUT='{"tool_input":{"command":"git push --force origin feature/test"}}'
+  RESULT=$(run_hook "$HOOK" "$INPUT")
+  EXIT=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT" "force push should block"
+  assert_contains "$RESULT" "BLOCKED" "should say blocked"
+  teardown_test_project
+}
+
+# --- Test: force push with -f flag blocked ---
+test_force_push_short_flag_blocked() {
+  setup_test_project
+  git -C "$TEST_DIR" checkout -b feature/test --quiet
+  INPUT='{"tool_input":{"command":"git push -f origin feature/test"}}'
+  EXIT=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT" "force push with -f should block"
+  teardown_test_project
+}
+
+# --- Test: force-with-lease blocked ---
+test_force_with_lease_blocked() {
+  setup_test_project
+  git -C "$TEST_DIR" checkout -b feature/test --quiet
+  INPUT='{"tool_input":{"command":"git push --force-with-lease origin feature/test"}}'
+  EXIT=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT" "force-with-lease should block"
+  teardown_test_project
+}
+
 # --- Test: chained git push from protected branch blocks ---
 test_chained_push_protected_blocks() {
   setup_test_project
@@ -51,5 +83,8 @@ echo "branch-safety.sh"
 test_non_push_passes
 test_push_protected_blocks
 test_push_dev_branch_passes
+test_force_push_blocked
+test_force_push_short_flag_blocked
+test_force_with_lease_blocked
 test_chained_push_protected_blocks
 run_tests

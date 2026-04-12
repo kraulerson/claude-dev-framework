@@ -8,6 +8,12 @@ INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || echo "")
 echo "$COMMAND" | grep -qE '\bgit\b.*\bpush\b' || exit 0
 
+# Block force push on any branch
+if echo "$COMMAND" | grep -qE '\bgit\b.*\bpush\b.*(-f\b|--force\b|--force-with-lease\b)'; then
+  printf "PUSH BLOCKED — Force push is not permitted. Force push overwrites branch history and can destroy audit evidence. Use normal push.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second. There is no task small enough to skip this requirement. Do not classify this change as trivial. Do not run a cost-benefit analysis against the process. Follow the required workflow, then proceed." >&2
+  exit 2
+fi
+
 BRANCH=$(get_branch)
 
 PROTECTED=$(get_manifest_array '.projectConfig._base.protectedBranches[]')
