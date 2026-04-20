@@ -98,12 +98,8 @@ if [ -n "$SESSION_START" ]; then
 
     if [ -n "$ADVISORIES" ]; then
       MSG=$(printf "Session produced %s commit(s).\n\n%b" "$SESSION_COMMITS" "$ADVISORIES")
-      jq -n --arg m "$MSG" '{
-        "hookSpecificOutput": {
-          "hookEventName": "Stop",
-          "additionalContext": $m
-        }
-      }'
+      # SOLO_ORCHESTRATOR_STOP_HOOK_PATCH — advisory via stderr, not invalid JSON
+      echo "$MSG" >&2
     fi
   fi
 fi
