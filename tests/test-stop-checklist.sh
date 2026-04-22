@@ -80,6 +80,45 @@ test_bugfix_with_test_passes() {
   teardown_test_project
 }
 
+# --- Test: merge commit with "fix" in subject should NOT flag (REGRESSION for Bug: merge false-positive) ---
+# git log --name-only emits no files for merge commits by default, so a merge
+# subject like "Merge branch 'fix/...'" used to falsely register as an untested fix.
+test_merge_commit_with_fix_subject_not_flagged() {
+  setup_test_project
+
+  git -C "$TEST_DIR" rev-parse HEAD > "/tmp/.claude_session_start_${TEST_HASH}"
+
+  # Create a side branch, make a commit there (with a test, so it's clean),
+  # then merge back with --no-ff to force a real merge commit whose default
+  # subject is "Merge branch 'fix/...'".
+  git -C "$TEST_DIR" checkout -b fix/ci-failures --quiet
+  commit_source_with_test "ci.kt" "CITest.kt" "Fix CI timeout"
+  git -C "$TEST_DIR" checkout main --quiet 2>/dev/null || git -C "$TEST_DIR" checkout master --quiet
+  git -C "$TEST_DIR" merge --no-ff fix/ci-failures --quiet -m "Merge branch 'fix/ci-failures'"
+
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  assert_not_contains "$RESULT" "bug fix" "merge commit with fix-named branch should not flag untested fix"
+  teardown_test_project
+}
+
+# --- Test: config-only fix commit should NOT flag (REGRESSION for Bug: asymmetric source check) ---
+# A "fix:" commit touching only .yml/.md has no source files changed, so it
+# cannot carry a code-level regression test — it must not be flagged.
+test_config_only_fix_not_flagged() {
+  setup_test_project
+
+  git -C "$TEST_DIR" rev-parse HEAD > "/tmp/.claude_session_start_${TEST_HASH}"
+
+  mkdir -p "$TEST_DIR/.github/workflows"
+  echo "name: ci" > "$TEST_DIR/.github/workflows/ci.yml"
+  git -C "$TEST_DIR" add .github/workflows/ci.yml
+  git -C "$TEST_DIR" commit -m "fix: CI initial failures" --quiet
+
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  assert_not_contains "$RESULT" "bug fix" "config-only fix commit should not flag untested fix"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "stop-checklist.sh"
 test_user_stop_always_passes
@@ -87,4 +126,6 @@ test_clean_state_passes
 test_uncommitted_source_blocks
 test_multi_commit_bugfix_detection
 test_bugfix_with_test_passes
+test_merge_commit_with_fix_subject_not_flagged
+test_config_only_fix_not_flagged
 run_tests

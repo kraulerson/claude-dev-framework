@@ -33,25 +33,27 @@ HASH=$(get_project_hash)
 SESSION_START=$(cat "/tmp/.claude_session_start_${HASH}" 2>/dev/null || echo "")
 if [ "$HAS_SOURCE" = false ] && [ -z "$STAGED" ] && [ -n "$SESSION_START" ]; then
   UNTESTED_FIXES=""
-  # Get all commits with files in one git call
-  COMMIT_LOG=$(git log --format="COMMIT %H %s" --name-only "${SESSION_START}..HEAD" 2>/dev/null || true)
-  CURRENT_SHA="" CURRENT_MSG="" CURRENT_HAS_TEST=false
+  # --no-merges: git log --name-only emits no files for merge commits, so a merge subject containing "fix" would falsely register as an untested fix.
+  COMMIT_LOG=$(git log --no-merges --format="COMMIT %H %s" --name-only "${SESSION_START}..HEAD" 2>/dev/null || true)
+  CURRENT_SHA="" CURRENT_MSG="" CURRENT_HAS_TEST=false CURRENT_HAS_SOURCE=false
   while IFS= read -r line; do
     if [[ "$line" == COMMIT\ * ]]; then
-      # Process previous commit
+      # Only flag if source was actually touched — config/doc-only fixes can't have a code regression test.
       if [ -n "$CURRENT_SHA" ] && echo "$CURRENT_MSG" | grep -qiE '\b(fix|bug|patch|hotfix|repair|resolve)\b'; then
-        [ "$CURRENT_HAS_TEST" = false ] && UNTESTED_FIXES="${UNTESTED_FIXES}${CURRENT_SHA:0:8}\n"
+        [ "$CURRENT_HAS_SOURCE" = true ] && [ "$CURRENT_HAS_TEST" = false ] && UNTESTED_FIXES="${UNTESTED_FIXES}${CURRENT_SHA:0:8}\n"
       fi
       CURRENT_SHA="${line#COMMIT }" CURRENT_SHA="${CURRENT_SHA%% *}"
       CURRENT_MSG="${line#COMMIT * }"
       CURRENT_HAS_TEST=false
+      CURRENT_HAS_SOURCE=false
     elif [ -n "$line" ] && [ -n "$CURRENT_SHA" ]; then
       is_test_file "$line" && CURRENT_HAS_TEST=true
+      is_source_file "$line" 2>/dev/null && CURRENT_HAS_SOURCE=true
     fi
   done <<< "$COMMIT_LOG"
   # Process last commit
   if [ -n "$CURRENT_SHA" ] && echo "$CURRENT_MSG" | grep -qiE '\b(fix|bug|patch|hotfix|repair|resolve)\b'; then
-    [ "$CURRENT_HAS_TEST" = false ] && UNTESTED_FIXES="${UNTESTED_FIXES}${CURRENT_SHA:0:8}\n"
+    [ "$CURRENT_HAS_SOURCE" = true ] && [ "$CURRENT_HAS_TEST" = false ] && UNTESTED_FIXES="${UNTESTED_FIXES}${CURRENT_SHA:0:8}\n"
   fi
   if [ -n "$UNTESTED_FIXES" ]; then
     ERRORS="${ERRORS}- One or more commits look like a bug fix but have NO regression test.\n"
