@@ -145,9 +145,12 @@ is_doc_or_config() {
 }
 
 check_context7() {
-  # Check if Context7 MCP server is registered in Claude Code
-  local settings="$HOME/.claude/settings.json"
-  [ ! -f "$settings" ] && return 1
+  # Three valid install paths: direct MCP in ~/.claude/settings.json, direct MCP in ~/.claude.json (what `claude mcp add -s user` writes), or plugin entry in ~/.claude/settings.json under .enabledPlugins.
   check_jq || return 1
-  jq -e '.mcpServers.context7 // .mcpServers["context7-mcp"] // empty' "$settings" >/dev/null 2>&1
+  local user_settings="$HOME/.claude/settings.json"
+  local user_json="$HOME/.claude.json"
+  [ -f "$user_settings" ] && jq -e '.mcpServers.context7 // .mcpServers["context7-mcp"] // empty' "$user_settings" >/dev/null 2>&1 && return 0
+  [ -f "$user_json" ]     && jq -e '.mcpServers.context7 // .mcpServers["context7-mcp"] // empty' "$user_json"     >/dev/null 2>&1 && return 0
+  [ -f "$user_settings" ] && jq -e '(.enabledPlugins // {}) | to_entries[] | select(.key | test("^context7(@|$)"; "i")) | select(.value == true)' "$user_settings" >/dev/null 2>&1 && return 0
+  return 1
 }
