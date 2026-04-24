@@ -77,11 +77,23 @@ compute_errors() {
 
 ERRORS=$(compute_errors)
 
+# Session-scope error dedup: suffix with session-start SHA so prior sessions are naturally orphaned (different suffix, no cross-session leakage).
+ERRORS_MARKER="/tmp/.claude_stop_errors_hash_${HASH}_${SESSION_START:-no-session}"
+
 if [ -n "$ERRORS" ]; then
+  ERRORS_HASH=$(printf '%s' "$ERRORS" | shasum -a 256 | cut -c1-16)
+  # Same error set already surfaced this session — staying silent avoids amplifying imperative pressure on the agent ("Complete these, then finish") on retries.
+  if [ -f "$ERRORS_MARKER" ] && [ "$(cat "$ERRORS_MARKER" 2>/dev/null)" = "$ERRORS_HASH" ]; then
+    exit 0
+  fi
+  printf '%s' "$ERRORS_HASH" > "$ERRORS_MARKER"
   REASON=$(printf "Unfinished steps:\n\n%b\nComplete these, then finish." "$ERRORS")
   jq -n --arg r "$REASON" '{"decision": "block", "reason": $r}'
   exit 0
 fi
+
+# Errors cleared — drop any stale marker so the next fresh error set is seen.
+[ -f "$ERRORS_MARKER" ] && rm -f "$ERRORS_MARKER"
 
 # Advisory: suggest session handoff and plan closure if work was done
 if [ -n "$SESSION_START" ]; then
