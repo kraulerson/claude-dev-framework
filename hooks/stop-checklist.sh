@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 # stop-checklist.sh — Stop hook. Blocks if work is incomplete.
+#
+# Pending-approval sentinel: if ${CLAUDE_PROJECT_DIR:-.}/.claude/pending-approval.json
+# exists, the agent is holding on a user decision — exit 0 silently (no block
+# JSON, no stderr advisory). Agent deletes the file when the user picks.
+# Staleness (orphaned file after a crash) is not handled here; `rm` manually.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/_helpers.sh" 2>/dev/null || exit 0
@@ -7,6 +12,10 @@ source "$SCRIPT_DIR/_helpers.sh" 2>/dev/null || exit 0
 INPUT=$(cat)
 STOP_REASON=$(echo "$INPUT" | jq -r '.stop_reason // empty' 2>/dev/null || echo "")
 [ "$STOP_REASON" = "user" ] || [ "$STOP_REASON" = "tool_error" ] && exit 0
+
+# Pending-approval sentinel: existence alone means "in flight" — malformed/empty content still counts, per spec.
+PENDING_APPROVAL="${CLAUDE_PROJECT_DIR:-.}/.claude/pending-approval.json"
+[ -f "$PENDING_APPROVAL" ] && exit 0
 
 HASH=$(get_project_hash)
 CHANGELOG=$(get_branch_config_value '.changelogFile')
