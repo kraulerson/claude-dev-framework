@@ -8,9 +8,10 @@ INPUT=$(cat)
 STOP_REASON=$(echo "$INPUT" | jq -r '.stop_reason // empty' 2>/dev/null || echo "")
 [ "$STOP_REASON" = "user" ] || [ "$STOP_REASON" = "tool_error" ] && exit 0
 
-ERRORS=""
+HASH=$(get_project_hash)
 CHANGELOG=$(get_branch_config_value '.changelogFile')
 CTX_HISTORY=$(get_branch_config_value '.contextHistoryFile')
+SESSION_START=$(cat "/tmp/.claude_session_start_${HASH}" 2>/dev/null || echo "")
 
 DIRTY=$(git diff --name-only 2>/dev/null || true)
 STAGED=$(git diff --cached --name-only 2>/dev/null || true)
@@ -23,53 +24,58 @@ if [ -n "$ALL" ]; then
   done
 fi
 
-if [ "$HAS_SOURCE" = true ]; then
-  [ -n "$CHANGELOG" ] && ! echo "$ALL" | grep -q "$CHANGELOG" && ERRORS="${ERRORS}- Source files modified but $CHANGELOG not updated.\n"
-  ERRORS="${ERRORS}- Uncommitted source changes. Commit before finishing.\n"
-fi
+# Exposed as a function so session-scope dedup can hash the final ERRORS string without duplicating the accumulation logic.
+compute_errors() {
+  local errors=""
 
-# Check ALL session commits for untested bug fixes (not just the last one)
-HASH=$(get_project_hash)
-SESSION_START=$(cat "/tmp/.claude_session_start_${HASH}" 2>/dev/null || echo "")
-if [ "$HAS_SOURCE" = false ] && [ -z "$STAGED" ] && [ -n "$SESSION_START" ]; then
-  UNTESTED_FIXES=""
-  # --no-merges: git log --name-only emits no files for merge commits, so a merge subject containing "fix" would falsely register as an untested fix.
-  COMMIT_LOG=$(git log --no-merges --format="COMMIT %H %s" --name-only "${SESSION_START}..HEAD" 2>/dev/null || true)
-  CURRENT_SHA="" CURRENT_MSG="" CURRENT_HAS_TEST=false CURRENT_HAS_SOURCE=false
-  while IFS= read -r line; do
-    if [[ "$line" == COMMIT\ * ]]; then
-      # Only flag if source was actually touched — config/doc-only fixes can't have a code regression test.
-      if [ -n "$CURRENT_SHA" ] && echo "$CURRENT_MSG" | grep -qiE '\b(fix|bug|patch|hotfix|repair|resolve)\b'; then
-        [ "$CURRENT_HAS_SOURCE" = true ] && [ "$CURRENT_HAS_TEST" = false ] && UNTESTED_FIXES="${UNTESTED_FIXES}${CURRENT_SHA:0:8}\n"
+  if [ "$HAS_SOURCE" = true ]; then
+    [ -n "$CHANGELOG" ] && ! echo "$ALL" | grep -q "$CHANGELOG" && errors="${errors}- Source files modified but $CHANGELOG not updated.\n"
+    errors="${errors}- Uncommitted source changes. Commit before finishing.\n"
+  fi
+
+  if [ "$HAS_SOURCE" = false ] && [ -z "$STAGED" ] && [ -n "$SESSION_START" ]; then
+    local untested_fixes="" commit_log current_sha="" current_msg="" current_has_test=false current_has_source=false line
+    # --no-merges: git log --name-only emits no files for merge commits, so a merge subject containing "fix" would falsely register as an untested fix.
+    commit_log=$(git log --no-merges --format="COMMIT %H %s" --name-only "${SESSION_START}..HEAD" 2>/dev/null || true)
+    while IFS= read -r line; do
+      if [[ "$line" == COMMIT\ * ]]; then
+        # Only flag if source was actually touched — config/doc-only fixes can't have a code regression test.
+        if [ -n "$current_sha" ] && echo "$current_msg" | grep -qiE '\b(fix|bug|patch|hotfix|repair|resolve)\b'; then
+          [ "$current_has_source" = true ] && [ "$current_has_test" = false ] && untested_fixes="${untested_fixes}${current_sha:0:8}\n"
+        fi
+        current_sha="${line#COMMIT }" current_sha="${current_sha%% *}"
+        current_msg="${line#COMMIT * }"
+        current_has_test=false
+        current_has_source=false
+      elif [ -n "$line" ] && [ -n "$current_sha" ]; then
+        is_test_file "$line" && current_has_test=true
+        is_source_file "$line" 2>/dev/null && current_has_source=true
       fi
-      CURRENT_SHA="${line#COMMIT }" CURRENT_SHA="${CURRENT_SHA%% *}"
-      CURRENT_MSG="${line#COMMIT * }"
-      CURRENT_HAS_TEST=false
-      CURRENT_HAS_SOURCE=false
-    elif [ -n "$line" ] && [ -n "$CURRENT_SHA" ]; then
-      is_test_file "$line" && CURRENT_HAS_TEST=true
-      is_source_file "$line" 2>/dev/null && CURRENT_HAS_SOURCE=true
+    done <<< "$commit_log"
+    if [ -n "$current_sha" ] && echo "$current_msg" | grep -qiE '\b(fix|bug|patch|hotfix|repair|resolve)\b'; then
+      [ "$current_has_source" = true ] && [ "$current_has_test" = false ] && untested_fixes="${untested_fixes}${current_sha:0:8}\n"
     fi
-  done <<< "$COMMIT_LOG"
-  # Process last commit
-  if [ -n "$CURRENT_SHA" ] && echo "$CURRENT_MSG" | grep -qiE '\b(fix|bug|patch|hotfix|repair|resolve)\b'; then
-    [ "$CURRENT_HAS_SOURCE" = true ] && [ "$CURRENT_HAS_TEST" = false ] && UNTESTED_FIXES="${UNTESTED_FIXES}${CURRENT_SHA:0:8}\n"
+    if [ -n "$untested_fixes" ]; then
+      errors="${errors}- One or more commits look like a bug fix but have NO regression test.\n"
+    fi
   fi
-  if [ -n "$UNTESTED_FIXES" ]; then
-    ERRORS="${ERRORS}- One or more commits look like a bug fix but have NO regression test.\n"
-  fi
-fi
 
-TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || echo "")
-if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ] && [ -n "$CTX_HISTORY" ]; then
-  SIZE=$(wc -c < "$TRANSCRIPT_PATH" 2>/dev/null || echo 0)
-  if [ "$SIZE" -gt 150000 ]; then
-    CTX_DIRTY=$(git diff --name-only -- "$CTX_HISTORY" 2>/dev/null || true)
-    CTX_STAGED=$(git diff --cached --name-only -- "$CTX_HISTORY" 2>/dev/null || true)
-    RECENT=$(git log --oneline -5 --diff-filter=M -- "$CTX_HISTORY" 2>/dev/null || true)
-    [ -z "$CTX_DIRTY" ] && [ -z "$CTX_STAGED" ] && [ -z "$RECENT" ] && ERRORS="${ERRORS}- Substantial session but $CTX_HISTORY not updated.\n"
+  local transcript_path size ctx_dirty ctx_staged recent
+  transcript_path=$(echo "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || echo "")
+  if [ -n "$transcript_path" ] && [ -f "$transcript_path" ] && [ -n "$CTX_HISTORY" ]; then
+    size=$(wc -c < "$transcript_path" 2>/dev/null || echo 0)
+    if [ "$size" -gt 150000 ]; then
+      ctx_dirty=$(git diff --name-only -- "$CTX_HISTORY" 2>/dev/null || true)
+      ctx_staged=$(git diff --cached --name-only -- "$CTX_HISTORY" 2>/dev/null || true)
+      recent=$(git log --oneline -5 --diff-filter=M -- "$CTX_HISTORY" 2>/dev/null || true)
+      [ -z "$ctx_dirty" ] && [ -z "$ctx_staged" ] && [ -z "$recent" ] && errors="${errors}- Substantial session but $CTX_HISTORY not updated.\n"
+    fi
   fi
-fi
+
+  printf "%s" "$errors"
+}
+
+ERRORS=$(compute_errors)
 
 if [ -n "$ERRORS" ]; then
   REASON=$(printf "Unfinished steps:\n\n%b\nComplete these, then finish." "$ERRORS")
