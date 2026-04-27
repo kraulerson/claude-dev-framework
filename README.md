@@ -162,6 +162,18 @@ cd ~/.claude-dev-framework && git pull
 cd ~/your-project && bash ~/.claude-dev-framework/scripts/sync.sh
 ```
 
+### Refreshing CDF assets in an existing project
+
+`scripts/cdf-refresh.sh` provides a `refresh_cdf_assets()` function that copies the latest hooks/rules/gates from the CDF clone into a downstream project's `.claude/framework/` subtree and updates the project's `manifest.json` (`frameworkVersion`, `frameworkCommit`).
+
+```bash
+# From any project that has a .claude/framework/ subtree:
+source ~/.claude-dev-framework/scripts/cdf-refresh.sh
+refresh_cdf_assets "$PWD" "$HOME/.claude-dev-framework" "false"
+```
+
+The third argument controls behavior on missing-clone: `"true"` (non-interactive) skips with a warning; `"false"` prompts the user with an explanation of CDF before re-cloning. Solo Orchestrator's `upgrade-project.sh` invokes this library automatically; CDF-only projects can call it directly as above.
+
 ### Migrating from v3 to v4
 
 ```bash
