@@ -37,6 +37,10 @@ if echo "$COMMAND" | grep -qE '\.claude/(framework/hooks/|settings\.json|setting
   if echo "$COMMAND" | grep -qE 'mark-evaluated\.sh'; then
     exit 0
   fi
+  # Allow read-only git inspection (BL-021): diff/log/show/blame/status etc. — mutating subcommands (add, checkout, restore, rm, mv, commit, stash, reset, clean, apply, update-ref) are NOT in this list and stay blocked.
+  if echo "$COMMAND" | grep -qE '^\s*git\s+(diff|log|show|blame|status|ls-files|cat-file|rev-parse|reflog|describe|name-rev|grep)\b'; then
+    exit 0
+  fi
   # Allow read-only commands (cat, head, tail, less, more, wc, file, stat, ls, grep, rg, awk, bat)
   if echo "$COMMAND" | grep -qE '^\s*(cat|head|tail|less|more|wc|file|stat|ls|grep|rg|awk|bat)\s'; then
     exit 0
