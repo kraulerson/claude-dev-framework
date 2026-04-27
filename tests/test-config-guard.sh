@@ -141,6 +141,76 @@ test_allows_normal_bash() {
 }
 
 # =============================================
+# Read-only git inspection of protected paths (BL-021)
+# =============================================
+# Operators need to inspect framework state via git without resorting to
+# subagents. Read-only git subcommands are allowed even when the path
+# argument lands inside a protected zone; mutating subcommands stay blocked.
+
+# --- Test: allows git diff on settings.json ---
+test_allows_git_diff_settings() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"git diff .claude/settings.json"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "0" "$EXIT_CODE" "should allow git diff on settings.json"
+  teardown_test_project
+}
+
+# --- Test: allows git log on manifest.json ---
+test_allows_git_log_manifest() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"git log .claude/manifest.json"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "0" "$EXIT_CODE" "should allow git log on manifest.json"
+  teardown_test_project
+}
+
+# --- Test: allows git show on framework hook ---
+test_allows_git_show_framework_hook() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"git show HEAD:.claude/framework/hooks/enforce-superpowers.sh"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "0" "$EXIT_CODE" "should allow git show on framework hook"
+  teardown_test_project
+}
+
+# --- Test: allows git blame on manifest.json ---
+test_allows_git_blame_manifest() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"git blame .claude/manifest.json"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "0" "$EXIT_CODE" "should allow git blame on manifest.json"
+  teardown_test_project
+}
+
+# --- Test: blocks git add on manifest.json (mutating) ---
+test_blocks_git_add_manifest() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"git add .claude/manifest.json"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "should block git add on manifest.json"
+  teardown_test_project
+}
+
+# --- Test: blocks git checkout HEAD -- on settings.json (mutating) ---
+test_blocks_git_checkout_settings() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"git checkout HEAD -- .claude/settings.json"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "should block git checkout on settings.json"
+  teardown_test_project
+}
+
+# --- Test: blocks git rm on framework hook (mutating) ---
+test_blocks_git_rm_framework_hook() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"git rm .claude/framework/hooks/enforce-evaluate.sh"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "should block git rm on framework hook"
+  teardown_test_project
+}
+
+# =============================================
 # Environment variable protection
 # =============================================
 
@@ -180,4 +250,11 @@ test_allows_mark_evaluated
 test_allows_normal_bash
 test_blocks_project_dir_override
 test_allows_project_dir_read
+test_allows_git_diff_settings
+test_allows_git_log_manifest
+test_allows_git_show_framework_hook
+test_allows_git_blame_manifest
+test_blocks_git_add_manifest
+test_blocks_git_checkout_settings
+test_blocks_git_rm_framework_hook
 run_tests
