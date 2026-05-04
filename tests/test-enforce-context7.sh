@@ -76,6 +76,15 @@ test_python_from_import() {
   teardown_test_project
 }
 
+# --- Test: Python __future__ import passes (stdlib compiler directive) ---
+test_python_future_import_passes() {
+  setup_test_project
+  INPUT='{"tool_name":"Write","tool_input":{"file_path":"app.py","content":"from __future__ import annotations\n\ndef f() -> int:\n    return 1\n"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "0" "$EXIT_CODE" "from __future__ import should pass as stdlib"
+  teardown_test_project
+}
+
 # --- Test: Edit tool reads new_string not file_path content ---
 test_edit_reads_new_string() {
   setup_test_project
@@ -115,6 +124,7 @@ test_relative_import_passes
 test_unknown_library_blocks
 test_researched_library_passes
 test_python_from_import
+test_python_future_import_passes
 test_edit_reads_new_string
 test_degraded_skips
 test_test_file_with_imports_passes
