@@ -5,7 +5,8 @@ source "$SCRIPT_DIR/helpers/assert.sh"
 source "$SCRIPT_DIR/helpers/setup.sh"
 
 HOOK="$HOOK_DIR/stop-checklist.sh"
-STOP_INPUT='{"stop_reason":"assistant"}'
+# Real Stop input (see tests/fixtures/stop.json): stop_hook_active=false, no reason field.
+STOP_INPUT=$(jq -c . "$SCRIPT_DIR/fixtures/stop.json")
 
 write_valid_sentinel() {
   cat > "$TEST_DIR/.claude/pending-approval.json" <<'JSON'
@@ -87,9 +88,9 @@ test_clean_tree_sentinel_silent() {
   EXIT=$(run_hook_exit_code "$HOOK" "$STOP_INPUT")
 
   assert_equals "0" "$EXIT" "clean tree + sentinel → exit 0"
-  # Advisory output goes to stderr (captured by run_hook via 2>&1). Sentinel should suppress it too.
-  assert_not_contains "$RESULT" "Design Zone" "sentinel should also suppress stderr advisory"
-  assert_not_contains "$RESULT" "Planning Zone" "sentinel should also suppress stderr advisory"
+  # Sentinel exits before the advisory branch, so no additionalContext JSON is emitted either.
+  assert_not_contains "$RESULT" "Design Zone" "sentinel should also suppress the advisory"
+  assert_not_contains "$RESULT" "Planning Zone" "sentinel should also suppress the advisory"
   teardown_test_project
 }
 

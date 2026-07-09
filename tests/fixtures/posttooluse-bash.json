@@ -1,0 +1,17 @@
+{
+  "permission_mode": "acceptEdits",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "echo hello world",
+    "description": "Echo hello world"
+  },
+  "tool_response": {
+    "stdout": "hello world",
+    "stderr": "",
+    "interrupted": false,
+    "isImage": false,
+    "noOutputExpected": false
+  },
+  "duration_ms": 35
+}

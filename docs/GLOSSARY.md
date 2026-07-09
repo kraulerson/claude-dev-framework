@@ -40,7 +40,7 @@ Canonical terms for Development Guardrails for Claude Code. All rules, hooks, do
 | Context7 MCP documentation lookup | **Context7 enforcement** | The requirement to query Context7 for library docs before writing code using that library | "doc check", "library lookup" |
 | Plan task tracking requirement | **plan-tracking** | The requirement to mark a plan task as in_progress before editing source files | "task tracking" (too generic) |
 | Playwright screenshot gate | **Visual Auditor** | The web-app verification gate that screenshots the app and asks Claude to self-reflect on UI spec match | "screenshot check", "UI test" |
-| Bleeding-edge doc fallback | **Tavily** (advisory) | Suggested when Context7 has no results for a library; user decides whether to use it | Not a hard requirement — never describe as mandatory |
+| Bleeding-edge doc fallback | **web search (WebSearch)** (advisory) | Suggested when Context7 has no results for a library; use the built-in WebSearch tool, and the user decides whether to rely on it | Not a hard requirement — never describe as mandatory |
 
 ## Manifest Path Notation
 

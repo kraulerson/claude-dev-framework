@@ -53,25 +53,43 @@ case "$TOOL" in
     touch "/tmp/.claude_c7_${HASH}_${NORMALIZED}"
     ;;
   mcp__context7__get-library-docs|mcp__context7__get_library_docs|mcp__plugin_context7_context7__get-library-docs|mcp__plugin_context7_context7__get_library_docs|mcp__context7__query-docs|mcp__plugin_context7_context7__query-docs)
-    LIB=$(echo "$INPUT" | jq -r '.tool_input.context7CompatibleLibraryID // empty' 2>/dev/null || echo "")
+    LIB=$(echo "$INPUT" | jq -r '.tool_input.context7CompatibleLibraryID // .tool_input.libraryId // empty' 2>/dev/null || echo "")
     [ -z "$LIB" ] && exit 0
     NORMALIZED=$(echo "$LIB" | tr '[:upper:]' '[:lower:]' | sed 's|^[@/]*||' | tr '/' '-')
     touch "/tmp/.claude_c7_${HASH}_${NORMALIZED}"
+    LAST_SEGMENT="${LIB##*/}"
+    if [[ -n "$LAST_SEGMENT" && "$LAST_SEGMENT" != "$LIB" ]]; then
+      LAST_NORMALIZED=$(echo "$LAST_SEGMENT" | tr '[:upper:]' '[:lower:]' | sed 's|^[@/]*||' | tr '/' '-')
+      touch "/tmp/.claude_c7_${HASH}_${LAST_NORMALIZED}"
+    fi
     ;;
 
-  # --- Sync tracking (was sync-tracker.sh) ---
+  # --- Sync tracking + post-commit marker reset (was sync-tracker.sh) ---
   Bash)
     COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || echo "")
-    EXIT_CODE=$(echo "$INPUT" | jq -r '.tool_response.exit_code // "1"' 2>/dev/null || echo "1")
-    # Track successful sync script executions
-    if echo "$COMMAND" | grep -qE 'sync-(changelog|shared|ios)\.sh' && [ "$EXIT_CODE" = "0" ]; then
+    INTERRUPTED=$(echo "$INPUT" | jq -r '.tool_response.interrupted // false' 2>/dev/null || echo "false")
+
+    # Track sync script executions. Real tool_response has no exit_code field
+    # (only stdout/stderr/interrupted), so "ran to completion" is the best
+    # available success signal. This marker only suppresses an advisory.
+    if echo "$COMMAND" | grep -qE 'sync-(changelog|shared|ios)\.sh' && [[ "$INTERRUPTED" != "true" ]]; then
       touch "/tmp/.claude_changelog_synced_${HASH}"
     fi
-    # Clear evaluation/superpowers/plan_active markers after successful commit
-    if echo "$COMMAND" | grep -qE '\bgit\b.*\bcommit\b' && [ "$EXIT_CODE" = "0" ]; then
-      rm -f "/tmp/.claude_evaluated_${HASH}"
-      rm -f "/tmp/.claude_superpowers_${HASH}"
-      rm -f "/tmp/.claude_plan_active_${HASH}"
+
+    # Clear evaluation/superpowers/plan_active markers after a successful commit.
+    # Success = HEAD moved since the last recorded position. A failed commit
+    # leaves HEAD unchanged, so markers survive. If last_head is missing
+    # (first commit this session), fail toward clearing — stricter, not looser.
+    if echo "$COMMAND" | grep -qE '\bgit\b.*\bcommit\b'; then
+      LAST_HEAD_FILE="/tmp/.claude_last_head_${HASH}"
+      CURRENT_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "")
+      LAST_HEAD=$(cat "$LAST_HEAD_FILE" 2>/dev/null || echo "")
+      if [[ -n "$CURRENT_HEAD" && "$CURRENT_HEAD" != "$LAST_HEAD" ]]; then
+        rm -f "/tmp/.claude_evaluated_${HASH}"
+        rm -f "/tmp/.claude_superpowers_${HASH}"
+        rm -f "/tmp/.claude_plan_active_${HASH}"
+        echo "$CURRENT_HEAD" > "$LAST_HEAD_FILE"
+      fi
     fi
     ;;
 
