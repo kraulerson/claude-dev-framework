@@ -86,7 +86,7 @@ MANIFEST
 
   # Test stop-checklist hook executes without error
   local stop_output stop_exit
-  stop_output=$(cd "$TEST_DIR" && echo '{"stop_reason":"user"}' | bash "$TEST_DIR/.claude/framework/hooks/stop-checklist.sh" 2>&1)
+  stop_output=$(cd "$TEST_DIR" && echo '{"hook_event_name":"Stop","stop_hook_active":false}' | bash "$TEST_DIR/.claude/framework/hooks/stop-checklist.sh" 2>&1)
   stop_exit=$?
   assert_exit_code "0" "$stop_exit" "stop-checklist should succeed with spaces in path"
 
