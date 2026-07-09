@@ -41,20 +41,14 @@ if ! command -v jq &>/dev/null; then
   echo "Install: brew install jq (macOS) or apt install jq (Linux)" >&2
 fi
 
-# ---- Helper: install Context7 with 30s timeout ----
+# ---- Helper: install Context7 (remote transport — no npx download) ----
 _install_context7() {
-  claude mcp add context7 -- npx -y @upstash/context7-mcp@latest 2>/dev/null &
-  local pid=$! elapsed=0
-  while kill -0 "$pid" 2>/dev/null; do
-    sleep 1
-    elapsed=$((elapsed + 1))
-    if [ "$elapsed" -ge 30 ]; then
-      kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null || true
-      echo "  ✗ Context7 install timed out after 30s. Implementation Zone will be degraded."
-      return 1
-    fi
-  done
-  wait "$pid" 2>/dev/null && echo "  ✓ Context7 MCP: INSTALLED" || echo "  ✗ Context7 install failed. Implementation Zone will be degraded."
+  if claude mcp add --transport http context7 https://mcp.context7.com/mcp 2>/dev/null; then
+    echo "  ✓ Context7 MCP: INSTALLED (remote transport)"
+  else
+    echo "  ✗ Context7 install failed. Implementation Zone will be degraded."
+    return 1
+  fi
 }
 
 # ---- Archive Mode ----
@@ -254,7 +248,7 @@ RESTORESH
     else
       echo "  ✗ Context7 MCP: NOT INSTALLED (required for v4.0.0)"
       if [ -t 0 ]; then
-        read -rp "    Install Context7 now? (requires Node.js) [y/N]: " c7_reply
+        read -rp "    Install Context7 now? (remote server — no Node.js needed) [y/N]: " c7_reply
       else
         c7_reply="n"
         echo "    Non-interactive mode: skipping Context7 install."

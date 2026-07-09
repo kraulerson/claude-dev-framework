@@ -4,13 +4,9 @@
 
 check_jq() { command -v jq &>/dev/null; }
 
-_MANIFEST_CACHE=""
 _get_manifest_json() {
-  if [ -z "$_MANIFEST_CACHE" ]; then
-    local manifest; manifest="$(get_manifest_path)"
-    [ -f "$manifest" ] && _MANIFEST_CACHE=$(cat "$manifest") || _MANIFEST_CACHE="{}"
-  fi
-  echo "$_MANIFEST_CACHE"
+  local manifest; manifest="$(get_manifest_path)"
+  [ -f "$manifest" ] && cat "$manifest" || echo "{}"
 }
 
 get_manifest_path() { echo "${CLAUDE_PROJECT_DIR:-.}/.claude/manifest.json"; }
