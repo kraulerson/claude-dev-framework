@@ -5,11 +5,40 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/_helpers.sh"
 
+# SessionStart input carries source: startup | resume | clear | compact.
+# Manual runs (no stdin) get source="" and are treated as startup.
+INPUT=""
+if [ ! -t 0 ]; then INPUT=$(cat 2>/dev/null || true); fi
+SOURCE=$(echo "$INPUT" | jq -r '.source // empty' 2>/dev/null || echo "")
+
 HASH=$(get_project_hash)
 BRANCH=$(get_branch)
 
-# Record session start commit for stop-checklist multi-commit detection
-git rev-parse HEAD > "/tmp/.claude_session_start_${HASH}" 2>/dev/null || true
+# Session marker hygiene (R-06 / R-20). Fresh sessions must not inherit stale
+# workflow markers that would pre-unlock enforcement zones; mid-session
+# continuations (resume/compact) preserve markers and the session window.
+case "$SOURCE" in
+  resume|compact)
+    # Mid-session continuation: keep workflow markers and the session window.
+    [ -f "/tmp/.claude_session_start_${HASH}" ] || git rev-parse HEAD > "/tmp/.claude_session_start_${HASH}" 2>/dev/null || true
+    [ -f "/tmp/.claude_last_head_${HASH}" ]     || git rev-parse HEAD > "/tmp/.claude_last_head_${HASH}" 2>/dev/null || true
+    ;;
+  *)
+    # startup / clear / unknown: fresh session. Stale markers from prior
+    # sessions must not pre-unlock enforcement zones (R-06).
+    rm -f "/tmp/.claude_superpowers_${HASH}" \
+          "/tmp/.claude_evaluated_${HASH}" \
+          "/tmp/.claude_has_plan_${HASH}" \
+          "/tmp/.claude_plan_active_${HASH}" \
+          "/tmp/.claude_plan_closed_${HASH}" \
+          "/tmp/.claude_changelog_synced_${HASH}" \
+          "/tmp/.claude_c7_degraded_${HASH}"
+    rm -f "/tmp/.claude_c7_${HASH}_"* 2>/dev/null || true
+    rm -f "/tmp/.claude_stop_errors_hash_${HASH}"* 2>/dev/null || true
+    git rev-parse HEAD > "/tmp/.claude_session_start_${HASH}" 2>/dev/null || true
+    git rev-parse HEAD > "/tmp/.claude_last_head_${HASH}"     2>/dev/null || true
+    ;;
+esac
 PROFILE=$(get_manifest_value '.profile')
 FRAMEWORK_DIR="$(get_framework_dir)"
 FRAMEWORK_CLONE="$HOME/.claude-dev-framework"
@@ -46,7 +75,7 @@ if check_context7; then
 else
   C7_STATUS="not installed"
   WARNINGS="${WARNINGS}\n  ! Context7 MCP not installed. Implementation Zone degraded."
-  WARNINGS="${WARNINGS}\n    To install: claude mcp add context7 -- npx -y @upstash/context7-mcp@latest"
+  WARNINGS="${WARNINGS}\n    To install: claude mcp add --transport http context7 https://mcp.context7.com/mcp"
   # Set degraded flag so enforce-context7.sh passes through
   touch "/tmp/.claude_c7_degraded_${HASH}"
 fi
@@ -115,4 +144,9 @@ echo ""
 echo "Profile: ${PROFILE:-unknown} | Branch: $BRANCH | Rules: $RULE_COUNT active | Sync: $SYNC_STATUS | v$FW_VER"
 
 [ -n "$CTX" ] && printf "\n=== RECENT CONTEXT ===\n%s\n=== END CONTEXT ===" "$CTX"
+
+if [ "$SOURCE" = "compact" ]; then
+  echo ""
+  echo "POST-COMPACTION RECOVERY: Context was just compacted. Re-read ${CTX_FILE:-your context history file} and any source files you were actively editing before continuing. Re-check the ZONES ARMED list above — enforcement is still active."
+fi
 exit 0
