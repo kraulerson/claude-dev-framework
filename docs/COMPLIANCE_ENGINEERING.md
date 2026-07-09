@@ -64,6 +64,11 @@ Layer 8: Session Audit (stop-checklist warns if workflow wasn't followed)
   │
 Layer 9: Meta-Attack Defense (config-guard.sh protects framework infrastructure)
   │ Hole: Cannot prevent Claude from asking the user to disable enforcement.
+  │
+Layer 10: Native Permission Rules (permissions.deny in generated settings.json)
+  │ Hole: Covers Claude's file tools and recognized Bash file commands only —
+  │       arbitrary subprocesses (python -c, node -e) can still write files.
+  │       OS-level sandboxing is the future layer for that hole.
 ```
 
 Each layer covers the holes in the layers above it. The combination makes bypass **significantly harder** than any single layer alone.
@@ -80,6 +85,8 @@ The first text Claude receives at session start, before the framework banner, be
 **Why it's first:** Session-start context is high-priority. Placing the directive before everything else maximizes its salience in Claude's initial context window.
 
 **Known limitation:** The directive fades. On task #3 or #4, Claude's per-task optimization reasserts. This is why it's not sufficient alone.
+
+As of v4.3.0 the directive is re-injected every user turn via the `compliance-reinforce` UserPromptSubmit hook, so the compliance frame is refreshed at each decision point rather than only at session start.
 
 ### Layer 2 — Blocking Hooks
 **Files:** `hooks/enforce-superpowers.sh`, `hooks/enforce-evaluate.sh`
@@ -139,9 +146,18 @@ At session end, if commits were made but no superpowers marker exists, an adviso
 
 **Why advisory and not blocking:** Session end audits are informational. Blocking session end for workflow compliance would trap Claude in sessions where the workflow was legitimately skipped (user said "skip").
 
+### Layer 10 — Native Permission Rules
+**File:** `permissions.deny` in the generated `.claude/settings.json` (built by `scripts/_shared.sh`)
+
+A static `permissions.deny` block is emitted into every generated settings file. It denies `Edit`/`Write` on `.claude/settings.json`, `.claude/settings.local.json`, `.claude/manifest.json`, and `.claude/framework/**`, plus the marker paths `/tmp/.claude_*` and `/private/tmp/.claude_*`.
+
+**Why native rules:** Deny rules are evaluated by the Claude Code harness itself, before hooks run, and cannot be overridden by allow rules. They cover Claude's own file tools and the file commands Claude Code recognizes inside Bash. This is a defense-in-depth layer under config-guard/marker-guard (Layers 4 and 9), not a replacement for them.
+
+**Known limitation:** Native rules only see Claude's file tools and recognized Bash file commands. An arbitrary subprocess (`python -c`, `node -e`) can still write files outside their view. Closing that hole requires OS-level sandboxing, which is the intended future layer.
+
 ## Enforcement Zones (v4.0.0)
 
-v4.0.0 organizes the 8 defense layers into five **enforcement zones** representing workflow stages. Zones are a messaging and organizational convention — hooks still fire independently via Claude Code events.
+v4.0.0 organizes the 10 defense layers into five **enforcement zones** representing workflow stages. Zones are a messaging and organizational convention — hooks still fire independently via Claude Code events.
 
 | Zone | Stage | Hooks | What It Gates |
 |------|-------|-------|---------------|

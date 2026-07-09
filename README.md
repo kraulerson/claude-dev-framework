@@ -4,7 +4,7 @@ A universal development discipline enforcement system for [Claude Code](https://
 
 This framework fixes that — but getting here required solving a deeper problem first. Claude has an internal priority stack: **speed → user satisfaction → compliance**. It classifies tasks as "trivial" or "complex" *before* checking rules, then rationalizes past any rule it considers unnecessary for "trivial" tasks. Early versions of this framework used advisory hooks (context injection), which Claude ignored. We then switched to blocking hooks (exit 2), which Claude bypassed by forging workflow markers. We removed the marker commands from messages, and Claude found them in rule files. We blocked the touch commands, and Claude presented text evaluations as substitutes for the required brainstorming skill.
 
-The current version (v4.0.0) organizes enforcement into **5 enforcement zones** (Discovery, Design, Planning, Implementation, Verification) built on an **8-layer defense-in-depth model** (inspired by the [Swiss cheese model](https://en.wikipedia.org/wiki/Swiss_cheese_model)). Each zone gates a workflow stage — from requiring Superpowers skills before editing, to enforcing plan-task tracking, to blocking code using unresearched libraries via [Context7](https://context7.com/) MCP, to running configurable pre-commit verification gates. The full analysis of Claude's behavioral model and how each layer targets a specific bypass pattern is documented in **[Compliance Engineering](docs/COMPLIANCE_ENGINEERING.md)**. If you're building enforcement for AI agents and hitting similar compliance failures, start there.
+The current version (v4.3.0) organizes enforcement into **5 enforcement zones** (Discovery, Design, Planning, Implementation, Verification) built on a **10-layer defense-in-depth model** (inspired by the [Swiss cheese model](https://en.wikipedia.org/wiki/Swiss_cheese_model)). Each zone gates a workflow stage — from requiring Superpowers skills before editing, to enforcing plan-task tracking, to blocking code using unresearched libraries via [Context7](https://context7.com/) MCP, to running configurable pre-commit verification gates. The full analysis of Claude's behavioral model and how each layer targets a specific bypass pattern is documented in **[Compliance Engineering](docs/COMPLIANCE_ENGINEERING.md)**. If you're building enforcement for AI agents and hitting similar compliance failures, start there.
 
 ## What Makes This Framework Different
 
@@ -95,7 +95,7 @@ The `--prepopulate` flag accepts a JSON file with the same structure as the disc
 
 ## Hooks
 
-**15 hooks** enforce rules mechanically via Claude Code's hook API:
+**17 hooks** enforce rules mechanically via Claude Code's hook API:
 
 | Hook | Zone | Type | What it does |
 |------|------|------|-------------|
@@ -109,8 +109,10 @@ The `--prepopulate` flag accepts a JSON file with the same structure as the disc
 | **branch-safety** | Verification | Blocking | Blocks pushes to protected branches |
 | **stop-checklist** | — | Blocking | Blocks session end with uncommitted work, untested bug fixes, or missing plan closure |
 | **marker-guard** | — | Blocking | Prevents manual creation of workflow markers via touch commands |
+| **config-guard** | — | Blocking | Protects framework config, hooks, and markers from modification |
 | **marker-tracker** | — | Passive | Unified PostToolUse marker management: skill/plan/context7/sync tracking |
-| **pre-compact-reminder** | — | Advisory | Warns to save context history before compression |
+| **session-end** | — | Passive | Clears session-scoped workflow markers at session end |
+| **compliance-reinforce** | — | Advisory | Re-injects a one-line compliance frame on every user prompt |
 | **changelog-sync-check** | — | Advisory | Warns before editing stale changelogs |
 | **scalability-check** | — | Advisory | Reminds about future platform plans when editing architecture |
 | **pre-deploy-check** | — | Advisory | Warns before deployment commands if commits are unpushed |
@@ -139,10 +141,10 @@ Profiles use YAML inheritance — all profiles inherit from `_base`, which provi
 - Bash 3.2+
 - [jq](https://jqlang.github.io/jq/) — `brew install jq` (macOS) / `apt install jq` (Linux)
 - Git
-- [Node.js](https://nodejs.org/) — required for Context7 MCP
+- Node.js — no longer required; Context7 uses the hosted MCP server
 - [Claude Code](https://claude.com/claude-code)
 - [Superpowers plugin](https://github.com/obra/superpowers) — install via `/plugins` in Claude Code
-- [Context7 MCP](https://context7.com/) — `claude mcp add context7 -- npx -y @upstash/context7-mcp@latest` (init.sh offers to install)
+- [Context7 MCP](https://context7.com/) — `claude mcp add --transport http context7 https://mcp.context7.com/mcp` (init.sh offers to install)
 
 ## Documentation
 
@@ -152,7 +154,7 @@ Profiles use YAML inheritance — all profiles inherit from `_base`, which provi
 - [Creating Profiles](docs/CREATING_PROFILES.md) — how to add project types
 - [Glossary](docs/GLOSSARY.md) — canonical terminology
 - [Claude Guide](docs/CLAUDE-GUIDE.md) — how the framework works from Claude's perspective
-- [Compliance Engineering](docs/COMPLIANCE_ENGINEERING.md) — Claude's behavioral model, 8-layer defense design, and enforcement zones
+- [Compliance Engineering](docs/COMPLIANCE_ENGINEERING.md) — Claude's behavioral model, 10-layer defense design, and enforcement zones
 - [Contributing](docs/CONTRIBUTING.md) — bash coding conventions
 
 ## Updating
@@ -161,6 +163,8 @@ Profiles use YAML inheritance — all profiles inherit from `_base`, which provi
 cd ~/.claude-dev-framework && git pull
 cd ~/your-project && bash ~/.claude-dev-framework/scripts/sync.sh
 ```
+
+As of 4.3.0, workflow markers are session-scoped: they are cleared at session start (for a fresh session) and at session end, so stale markers from a prior session can no longer pre-unlock enforcement zones.
 
 ### Refreshing CDF assets in an existing project
 
@@ -185,7 +189,7 @@ This copies new hooks, updates the manifest, regenerates settings.json, and offe
 
 ## Testing
 
-The framework tests itself with 199+ automated assertions across 23 test files:
+The framework tests itself with 199+ automated assertions across 25+ test files:
 
 ```bash
 bash tests/run-tests.sh

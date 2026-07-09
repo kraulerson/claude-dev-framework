@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# v4-fixed.sh — Robust, fully NON-INTERACTIVE migration of a v3.x CDF project
+# v4.sh — Robust, fully NON-INTERACTIVE migration of a v3.x CDF project
 # to whatever CDF version is currently installed at ~/.claude-dev-framework.
 #
 # Everything is DERIVED from the current framework clone (files + profiles),
@@ -209,8 +209,8 @@ if [ "$c7_ok" = true ]; then
 else
   echo "  WARNING: Context7 MCP is NOT installed."
   echo "           The 'enforce-context7' hook will WARN on every edit until it is."
-  echo "           Install (one-time, requires Node.js):"
-  echo "             claude mcp add context7 -- npx -y @upstash/context7-mcp@latest"
+  echo "           Install (one-time):"
+  echo "             claude mcp add --transport http context7 https://mcp.context7.com/mcp"
   echo "           Migration continues regardless — this is not a failure."
 fi
 

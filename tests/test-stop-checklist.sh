@@ -5,25 +5,37 @@ source "$SCRIPT_DIR/helpers/assert.sh"
 source "$SCRIPT_DIR/helpers/setup.sh"
 
 HOOK="$HOOK_DIR/stop-checklist.sh"
-STOP_INPUT='{"stop_reason":"assistant"}'
-USER_STOP_INPUT='{"stop_reason":"user"}'
+# Real Stop input (see tests/fixtures/stop.json): stop_hook_active=false, no reason field.
+STOP_INPUT=$(jq -c . "$SCRIPT_DIR/fixtures/stop.json")
+# Loop-guard input: stop_hook_active=true means a prior block this turn.
+ACTIVE_INPUT='{"hook_event_name":"Stop","stop_hook_active":true}'
 
-# --- Test: user-initiated stop always passes ---
-test_user_stop_always_passes() {
+# The shared setup leaves .claude/ untracked; the R-10 `git status --porcelain`
+# check would report it as uncommitted source. A real installed project tracks
+# .claude/, so commit it here to establish a genuine clean baseline.
+setup_stop_test() {
   setup_test_project
+  git -C "$TEST_DIR" add .claude
+  git -C "$TEST_DIR" commit -m "chore: track .claude manifest" --quiet
+}
+
+# --- Test: stop_hook_active=true short-circuits (loop guard) ---
+test_stop_hook_active_short_circuits() {
+  setup_stop_test
+  # Dirty tree that would otherwise block.
   echo "// dirty" > "$TEST_DIR/app.kt"
   git -C "$TEST_DIR" add app.kt
 
-  RESULT=$(run_hook "$HOOK" "$USER_STOP_INPUT")
-  EXIT=$(run_hook_exit_code "$HOOK" "$USER_STOP_INPUT")
-  assert_exit_code "0" "$EXIT" "user stop should exit 0"
-  assert_not_contains "$RESULT" "block" "user stop should produce no block output"
+  RESULT=$(run_hook "$HOOK" "$ACTIVE_INPUT")
+  EXIT=$(run_hook_exit_code "$HOOK" "$ACTIVE_INPUT")
+  assert_exit_code "0" "$EXIT" "stop_hook_active=true should exit 0"
+  assert_equals "" "$RESULT" "stop_hook_active=true should produce empty output"
   teardown_test_project
 }
 
 # --- Test: clean state passes ---
 test_clean_state_passes() {
-  setup_test_project
+  setup_stop_test
   commit_source_file "app.kt" "Add app"
 
   RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
@@ -35,7 +47,7 @@ test_clean_state_passes() {
 
 # --- Test: uncommitted source file blocks ---
 test_uncommitted_source_blocks() {
-  setup_test_project
+  setup_stop_test
   echo "// new code" > "$TEST_DIR/feature.kt"
   git -C "$TEST_DIR" add feature.kt
 
@@ -44,12 +56,53 @@ test_uncommitted_source_blocks() {
   teardown_test_project
 }
 
+# --- Test: untracked source file (never git-added) blocks (R-10) ---
+# git status --porcelain reports untracked files as "??"; the old git-diff-only
+# construction missed them entirely. An untracked .py must now be detected.
+test_untracked_source_blocks() {
+  setup_stop_test
+  echo "x = 1" > "$TEST_DIR/new.py"   # never `git add`
+
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  assert_contains "$RESULT" "Uncommitted source" "untracked source file should block"
+  teardown_test_project
+}
+
+# --- Test: untracked path containing a space still detected (quote stripping) (R-10) ---
+# git status --porcelain quotes paths with spaces; the sed pipeline strips the
+# surrounding quotes so the path is still recognized as source.
+test_untracked_path_with_space_detected() {
+  setup_stop_test
+  echo "x = 1" > "$TEST_DIR/my file.py"   # never `git add`; path has a space
+
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  assert_contains "$RESULT" "Uncommitted source" "untracked path with a space should block"
+  teardown_test_project
+}
+
+# --- Test: end-of-session advisory is emitted as Stop additionalContext (R-14) ---
+# Clean tree with commits but no superpowers marker → advisory JSON, not stderr.
+test_advisory_emitted_as_additional_context() {
+  setup_stop_test
+  git -C "$TEST_DIR" rev-parse HEAD > "/tmp/.claude_session_start_${TEST_HASH}"
+  commit_source_file "app.kt" "Add app feature"
+
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  EXIT=$(run_hook_exit_code "$HOOK" "$STOP_INPUT")
+  assert_exit_code "0" "$EXIT" "advisory path should exit 0"
+  assert_not_contains "$RESULT" "block" "advisory path should not block"
+  assert_contains "$RESULT" '"hookEventName": "Stop"' "advisory should carry Stop hookEventName"
+  assert_contains "$RESULT" "additionalContext" "advisory should be delivered as additionalContext"
+  assert_contains "$RESULT" "Design Zone" "advisory content should include the design-zone note"
+  teardown_test_project
+}
+
 # --- Test: multi-commit bug fix detection (REGRESSION for Bug #1) ---
 # This test verifies that a bug fix commit is caught even when
 # followed by a non-fix commit. Before the fix, only git log -1
 # was checked, so the fix commit was invisible.
 test_multi_commit_bugfix_detection() {
-  setup_test_project
+  setup_stop_test
 
   # Record session start (simulates what session-start.sh does)
   git -C "$TEST_DIR" rev-parse HEAD > "/tmp/.claude_session_start_${TEST_HASH}"
@@ -68,7 +121,7 @@ test_multi_commit_bugfix_detection() {
 
 # --- Test: bug fix WITH test passes ---
 test_bugfix_with_test_passes() {
-  setup_test_project
+  setup_stop_test
 
   git -C "$TEST_DIR" rev-parse HEAD > "/tmp/.claude_session_start_${TEST_HASH}"
 
@@ -84,7 +137,7 @@ test_bugfix_with_test_passes() {
 # git log --name-only emits no files for merge commits by default, so a merge
 # subject like "Merge branch 'fix/...'" used to falsely register as an untested fix.
 test_merge_commit_with_fix_subject_not_flagged() {
-  setup_test_project
+  setup_stop_test
 
   git -C "$TEST_DIR" rev-parse HEAD > "/tmp/.claude_session_start_${TEST_HASH}"
 
@@ -105,7 +158,7 @@ test_merge_commit_with_fix_subject_not_flagged() {
 # A "fix:" commit touching only .yml/.md has no source files changed, so it
 # cannot carry a code-level regression test — it must not be flagged.
 test_config_only_fix_not_flagged() {
-  setup_test_project
+  setup_stop_test
 
   git -C "$TEST_DIR" rev-parse HEAD > "/tmp/.claude_session_start_${TEST_HASH}"
 
@@ -121,9 +174,12 @@ test_config_only_fix_not_flagged() {
 
 # --- Run all tests ---
 echo "stop-checklist.sh"
-test_user_stop_always_passes
+test_stop_hook_active_short_circuits
 test_clean_state_passes
 test_uncommitted_source_blocks
+test_untracked_source_blocks
+test_untracked_path_with_space_detected
+test_advisory_emitted_as_additional_context
 test_multi_commit_bugfix_detection
 test_bugfix_with_test_passes
 test_merge_commit_with_fix_subject_not_flagged

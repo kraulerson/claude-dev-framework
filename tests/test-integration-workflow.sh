@@ -56,13 +56,23 @@ test_full_session_lifecycle() {
   git -C "$TEST_DIR" commit -m "Add feature" --quiet
 
   # --- Phase 6: Marker-tracker clears markers after commit ---
-  POST_COMMIT='{"tool_name":"Bash","tool_input":{"command":"git commit -m \"Add feature\""},"tool_response":{"exit_code":"0"}}'
+  # Real PostToolUse Bash input has no exit_code field; marker-tracker detects a
+  # successful commit via HEAD movement (the real commit happened just above).
+  POST_COMMIT='{"tool_name":"Bash","tool_input":{"command":"git commit -m \"Add feature\""},"tool_response":{"stdout":"","stderr":"","interrupted":false}}'
   run_hook "$HOOK_DIR/marker-tracker.sh" "$POST_COMMIT" >/dev/null
   assert_file_not_exists "/tmp/.claude_evaluated_${TEST_HASH}" "eval marker should be cleared after commit"
   assert_file_not_exists "/tmp/.claude_superpowers_${TEST_HASH}" "superpowers marker should be cleared after commit"
 
+  # Commit the .claude framework files so the tree is genuinely clean for Phase 7.
+  # A real installed project tracks .claude/; the R-10 `git status --porcelain`
+  # check (correctly) reports the copied-in hook files as untracked source
+  # otherwise. Mirrors setup_stop_test in tests/test-stop-checklist.sh.
+  git -C "$TEST_DIR" add .claude
+  git -C "$TEST_DIR" commit -m "chore: track .claude framework" --quiet
+
   # --- Phase 7: Stop Checklist (clean state) ---
-  STOP_INPUT='{"stop_reason":"assistant"}'
+  # Real Stop input: stop_hook_active loop guard, no stop_reason field.
+  STOP_INPUT='{"hook_event_name":"Stop","stop_hook_active":false}'
   STOP_RESULT=$(run_hook "$HOOK_DIR/stop-checklist.sh" "$STOP_INPUT")
   STOP_EXIT=$(run_hook_exit_code "$HOOK_DIR/stop-checklist.sh" "$STOP_INPUT")
   assert_exit_code "0" "$STOP_EXIT" "stop should pass with clean state"
@@ -106,8 +116,8 @@ test_v4_full_lifecycle() {
   EXIT_CODE=$(run_hook_exit_code "$HOOK_DIR/enforce-plan-tracking.sh" "$INPUT_EDIT")
   assert_exit_code "0" "$EXIT_CODE" "v4: should pass plan-tracking with marker"
 
-  # 7. Simulate commit -> markers cleared
-  INPUT_COMMIT='{"tool_name":"Bash","tool_input":{"command":"git commit -m \"feat: test\""},"tool_response":{"exit_code":"0"}}'
+  # 7. Simulate commit -> markers cleared (HEAD-movement detection; no exit_code field)
+  INPUT_COMMIT='{"tool_name":"Bash","tool_input":{"command":"git commit -m \"feat: test\""},"tool_response":{"stdout":"","stderr":"","interrupted":false}}'
   echo "# code" > "$TEST_DIR/app.py"
   git -C "$TEST_DIR" add app.py
   git -C "$TEST_DIR" commit -m "feat: test" --quiet

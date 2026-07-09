@@ -48,6 +48,7 @@ case "$MODE" in
     echo "ERROR: Mode must be --global or --project-template" >&2; exit 1 ;;
 esac
 
+mkdir -p "$(dirname "$DEST")"
 cp "$OLDPWD/$FILE_PATH" "$DEST"
 git add "$DEST"
 git commit -m "Add $BASENAME from project (push-up)"

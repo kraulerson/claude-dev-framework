@@ -59,13 +59,20 @@ if [ "$LANG_PREFIX" = "py" ]; then
   done <<< "$(echo "$CONTENT" | grep -oE "(from [a-zA-Z_][a-zA-Z0-9_]* import|^import [a-zA-Z_][a-zA-Z0-9_.]*)" 2>/dev/null || true)"
 fi
 
-# Go: import "lib" or import ( "lib" )
-if [ "$LANG_PREFIX" = "go" ]; then
+# Go: import "lib" or import ( "lib" \n "lib2" ) — scan import statements only,
+# not every quoted string in the file.
+if [[ "$LANG_PREFIX" = "go" ]]; then
+  GO_IMPORT_LINES=$(echo "$CONTENT" | awk '
+    /^[[:space:]]*import[[:space:]]*\(/ { inblock=1; next }
+    inblock && /^[[:space:]]*\)/        { inblock=0; next }
+    inblock                              { print }
+    /^[[:space:]]*import[[:space:]]+"/   { print }
+  ')
   while IFS= read -r line; do
     [ -z "$line" ] && continue
     LIB=${line//\"/}
     [ -n "$LIB" ] && LIBS="${LIBS}${LIB}\n"
-  done <<< "$(echo "$CONTENT" | grep -oE '"[a-zA-Z][^"]*"' 2>/dev/null || true)"
+  done <<< "$(echo "$GO_IMPORT_LINES" | grep -oE '"[a-zA-Z][^"]*"' 2>/dev/null || true)"
 fi
 
 # Rust: use lib::...; extern crate lib;
@@ -126,7 +133,7 @@ while IFS= read -r lib; do
 done <<< "$(printf "%b" "$LIBS" | sort -u)"
 
 if [ -n "$MISSING" ]; then
-  printf "BLOCKED [Implementation Zone] — Unresearched libraries detected:\n%b\nBefore editing, query Context7 for each library:\n  1. Use resolve-library-id to find the Context7 ID\n  2. Use get-library-docs to fetch current documentation\n\nIf Context7 has no results, consider using Tavily web search for bleeding-edge libraries.\n\nDo NOT write code using libraries you haven't researched.\nDo NOT skip this because you are confident in your training data.\nDo NOT create markers manually.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second.\n" "$MISSING" >&2
+  printf "BLOCKED [Implementation Zone] — Unresearched libraries detected:\n%b\nBefore editing, query Context7 for each library:\n  1. Use resolve-library-id to find the Context7 ID\n  2. Use query-docs to fetch current documentation\n\nIf Context7 has no results, consider using web search (the built-in WebSearch tool) for bleeding-edge libraries.\n\nDo NOT write code using libraries you haven't researched.\nDo NOT skip this because you are confident in your training data.\nDo NOT create markers manually.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second.\n" "$MISSING" >&2
   exit 2
 fi
 exit 0

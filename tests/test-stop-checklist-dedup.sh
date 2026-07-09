@@ -5,7 +5,17 @@ source "$SCRIPT_DIR/helpers/assert.sh"
 source "$SCRIPT_DIR/helpers/setup.sh"
 
 HOOK="$HOOK_DIR/stop-checklist.sh"
-STOP_INPUT='{"stop_reason":"assistant"}'
+# Real Stop input (see tests/fixtures/stop.json): stop_hook_active=false, no reason field.
+STOP_INPUT=$(jq -c . "$SCRIPT_DIR/fixtures/stop.json")
+
+# The shared setup leaves .claude/ untracked; the R-10 `git status --porcelain`
+# check would report it as uncommitted source, masking the error-set changes this
+# suite exercises. A real installed project tracks .claude/, so commit it here.
+setup_stop_test() {
+  setup_test_project
+  git -C "$TEST_DIR" add .claude
+  git -C "$TEST_DIR" commit -m "chore: track .claude manifest" --quiet
+}
 
 # Returns the expected marker path for the current test project.
 errors_marker_path() {
@@ -16,7 +26,7 @@ errors_marker_path() {
 
 # --- Test: first firing emits block and writes marker ---
 test_first_fire_emits_block_and_writes_marker() {
-  setup_test_project
+  setup_stop_test
   git -C "$TEST_DIR" rev-parse HEAD > "/tmp/.claude_session_start_${TEST_HASH}"
   echo "// dirty" > "$TEST_DIR/feature.kt"
   git -C "$TEST_DIR" add feature.kt
@@ -29,7 +39,7 @@ test_first_fire_emits_block_and_writes_marker() {
 
 # --- Test: second firing with identical errors is silent ---
 test_second_fire_identical_errors_silent() {
-  setup_test_project
+  setup_stop_test
   git -C "$TEST_DIR" rev-parse HEAD > "/tmp/.claude_session_start_${TEST_HASH}"
   echo "// dirty" > "$TEST_DIR/feature.kt"
   git -C "$TEST_DIR" add feature.kt
@@ -50,7 +60,7 @@ test_second_fire_identical_errors_silent() {
 
 # --- Test: different errors re-emit block and update marker ---
 test_different_errors_reemit_and_update_marker() {
-  setup_test_project
+  setup_stop_test
   git -C "$TEST_DIR" rev-parse HEAD > "/tmp/.claude_session_start_${TEST_HASH}"
 
   # First firing: dirty source → error "Uncommitted source changes..."
@@ -75,7 +85,7 @@ test_different_errors_reemit_and_update_marker() {
 
 # --- Test: empty errors removes marker ---
 test_empty_errors_removes_marker() {
-  setup_test_project
+  setup_stop_test
   git -C "$TEST_DIR" rev-parse HEAD > "/tmp/.claude_session_start_${TEST_HASH}"
 
   # Seed: dirty tree produces a block and a marker.
@@ -96,7 +106,7 @@ test_empty_errors_removes_marker() {
 
 # --- Test: marker filename includes session-start SHA ---
 test_marker_name_includes_session_sha() {
-  setup_test_project
+  setup_stop_test
   SESSION_SHA=$(git -C "$TEST_DIR" rev-parse HEAD)
   echo "$SESSION_SHA" > "/tmp/.claude_session_start_${TEST_HASH}"
   echo "// dirty" > "$TEST_DIR/feature.kt"

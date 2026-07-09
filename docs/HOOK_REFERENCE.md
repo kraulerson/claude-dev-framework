@@ -4,7 +4,7 @@
 
 | Zone | Hooks | Purpose |
 |------|-------|---------|
-| Discovery | session-start.sh | Dependency checks, zone activation, Context7 install |
+| Discovery | session-start.sh, session-end.sh | Dependency checks, zone activation, Context7 install; session-scoped marker lifecycle (start clears stale markers, end cleans up) |
 | Design | enforce-superpowers.sh, marker-tracker.sh | Blocks edits until Superpowers skill invoked |
 | Planning | enforce-plan-tracking.sh, marker-tracker.sh | Blocks edits until plan task is in_progress |
 | Implementation | enforce-context7.sh, marker-tracker.sh | Blocks edits using unresearched libraries |
@@ -28,9 +28,9 @@
 - **Disable:** Remove `enforce-evaluate` from `manifest.json → activeHooks`
 
 ## enforce-superpowers.sh
-- **Event:** PreToolUse (Write|Edit)
-- **Blocking:** Advisory (JSON additionalContext)
-- **Purpose:** Injects reminder if source files are written without Superpowers workflow
+- **Event:** PreToolUse (Write|Edit|NotebookEdit)
+- **Blocking:** Yes (exit 2)
+- **Purpose:** Blocks source file edits until a Superpowers skill has been invoked this session
 - **Skips:** Docs, config, test files
 - **Marker:** `/tmp/.claude_superpowers_{hash}` — created when Superpowers skill is invoked
 - **Disable:** Remove `enforce-superpowers` from `manifest.json → activeHooks`
@@ -53,16 +53,11 @@
 - **Event:** Stop
 - **Blocking:** Yes (JSON `decision: "block"`)
 - **Purpose:** Blocks session end if uncommitted work, missing changelog, bug fix without test, or long session without context history
-- **Never blocks:** User-initiated stops or tool errors
+- **Loop guard:** exits silently when `stop_hook_active` is true (a prior block this turn).
+- **Advisory output:** The end-of-session advisory is delivered as Stop `additionalContext` JSON (not stderr).
 - **Pending-approval sentinel:** If `${CLAUDE_PROJECT_DIR}/.claude/pending-approval.json` exists, hook exits 0 silently (no block JSON, no stderr advisory). The agent writes this file when offering structured A/B/C options to the user; deletes it when the user picks. Existence alone suffices — malformed/empty content is treated as in-flight. Orphaned files (after a crash) are not auto-cleaned; `rm` manually.
 - **Session-scope error dedup:** After the first block for a given error set, subsequent firings with the same errors are silent. Marker at `/tmp/.claude_stop_errors_hash_{hash}_{session_start_sha}` holds a shasum of the ERRORS string; empty errors clear it. Prevents the retry-amplification loop where repeated "Complete these, then finish" pressure would erode agent discipline.
 - **Disable:** Remove `stop-checklist` from `manifest.json → activeHooks`
-
-## pre-compact-reminder.sh
-- **Event:** PreCompact
-- **Blocking:** Advisory (JSON additionalContext)
-- **Purpose:** Warns to save context history before compression
-- **Disable:** Remove `pre-compact-reminder` from `manifest.json → activeHooks`
 
 ## changelog-sync-check.sh
 - **Event:** PreToolUse (Write|Edit)
@@ -89,15 +84,15 @@
 - **Event:** PostToolUse (all tools)
 - **Zone:** Design + Planning + Implementation
 - **Blocking:** No
-- **Purpose:** Unified PostToolUse marker management. Creates superpowers/has_plan markers on Superpowers skill invoke; creates/clears plan_active marker on TaskUpdate; creates per-library c7 markers on Context7 MCP queries; creates changelog_synced marker on sync scripts; clears evaluation/superpowers/plan_active markers after successful commit
-- **Markers:** `.claude_superpowers_{hash}`, `.claude_has_plan_{hash}`, `.claude_plan_active_{hash}`, `.claude_c7_{hash}_{library}`, `.claude_changelog_synced_{hash}`
+- **Purpose:** Unified PostToolUse marker management. Creates superpowers/has_plan markers on Superpowers skill invoke; creates/clears plan_active marker on TaskUpdate; creates per-library c7 markers on Context7 MCP queries; creates changelog_synced marker on sync scripts; clears evaluation/superpowers/plan_active markers after a successful commit. Commit success is detected by HEAD movement (the real Bash `tool_response` has no `exit_code`): after a commit command, if `git rev-parse HEAD` differs from the recorded `last_head`, the commit succeeded and the markers are cleared; a failed commit leaves HEAD unchanged and the markers survive.
+- **Markers:** `.claude_superpowers_{hash}`, `.claude_has_plan_{hash}`, `.claude_plan_active_{hash}`, `.claude_c7_{hash}_{library}`, `.claude_changelog_synced_{hash}`, `.claude_last_head_{hash}`
 - **Disable:** Remove `marker-tracker` from `manifest.json → activeHooks`
 
 ## marker-guard.sh
-- **Event:** PreToolUse (Bash)
+- **Event:** PreToolUse (Bash|Write|Edit|NotebookEdit)
 - **Blocking:** Yes (exit 2)
-- **Purpose:** Blocks any command that references workflow marker paths (`/tmp/.claude_*_*`), regardless of creation method (touch, echo redirect, cp, tee, dd, python, etc.). Prevents Claude from forging markers to bypass enforcement.
-- **Allowed:** `mark-evaluated.sh` script path
+- **Purpose:** Blocks any attempt to create or tamper with framework marker/state paths. Bash commands referencing a marker path (`superpowers`, `evaluated`, `plan_closed`, `plan_active`, `has_plan`, `skill_active`, `c7`, `c7_degraded`, `changelog_synced`, `session_start`, `last_head`, `stop_errors_hash`, `eval_log`) are blocked regardless of creation method (touch, echo redirect, cp, tee, dd, python, etc.). Write/Edit/NotebookEdit whose target path is under `/tmp/.claude_*` or `/private/tmp/.claude_*` is also blocked (R-07). Prevents Claude from forging markers or altering framework state (e.g. `last_head` to suppress post-commit resets, `session_start` to skew the stop audit, `stop_errors_hash` to silence stop blocks) to bypass enforcement.
+- **Allowed:** `mark-evaluated.sh` — but only as a lone, unchained invocation. A command that merely contains the string (e.g. appended after `&&`, `;`, `|`, backticks, or `$(...)`) does not unlock the guard.
 - **Disable:** Remove `marker-guard` from `manifest.json → activeHooks`
 
 ## config-guard.sh
@@ -106,6 +101,18 @@
 - **Purpose:** Protects framework infrastructure from modification. Blocks: (1) Write/Edit on `.claude/settings.json`, `.claude/settings.local.json`, `.claude/manifest.json`, and any `.claude/framework/*` path; (2) Bash commands that modify framework config or hook files (sed, rm, chmod, echo redirect, etc.); (3) `CLAUDE_PROJECT_DIR=` environment variable assignments.
 - **Allowed:** Read-only Bash commands (cat/head/tail/grep/etc.) on framework files; `mark-evaluated.sh` script path
 - **Disable:** Remove `config-guard` from `manifest.json → activeHooks`
+
+## session-end.sh
+- **Event:** SessionEnd
+- **Blocking:** No
+- **Purpose:** Clears session-scoped workflow markers (superpowers, evaluated, has_plan, plan_active, plan_closed, c7_*, changelog_synced, stop-error dedup, session_start, last_head) at session end so stale markers can't pre-unlock enforcement zones in the next session. The eval audit log (`/tmp/.claude_eval_log_{hash}`) is intentionally preserved.
+- **Disable:** Remove `session-end` from `manifest.json → activeHooks`
+
+## compliance-reinforce.sh
+- **Event:** UserPromptSubmit
+- **Blocking:** No (JSON additionalContext)
+- **Purpose:** Injects a one-line compliance frame on every user prompt (Layer 1 reinforcement). The session-start directive fades over task boundaries; this keeps the compliance frame present at each decision point.
+- **Disable:** Remove `compliance-reinforce` from `manifest.json → activeHooks`
 
 ## enforce-plan-tracking.sh
 - **Event:** PreToolUse (Write|Edit)

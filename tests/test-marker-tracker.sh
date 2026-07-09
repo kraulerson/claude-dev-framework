@@ -7,6 +7,7 @@ source "$SCRIPT_DIR/helpers/assert.sh"
 source "$SCRIPT_DIR/helpers/setup.sh"
 
 HOOK="$HOOK_DIR/marker-tracker.sh"
+FIXTURE_BASH="$SCRIPT_DIR/fixtures/posttooluse-bash.json"
 
 # =============================================
 # Skill tracking (was skill-tracker.sh)
@@ -149,6 +150,16 @@ test_creates_marker_on_query_docs() {
   teardown_test_project
 }
 
+# --- Test: query-docs with libraryId credits both full id and last segment ---
+test_query_docs_libraryId_credits_both() {
+  setup_test_project
+  INPUT='{"tool_name":"mcp__context7__query-docs","tool_input":{"libraryId":"/vercel/next.js","query":"routing"}}'
+  run_hook "$HOOK" "$INPUT" >/dev/null 2>&1
+  assert_file_exists "/tmp/.claude_c7_${TEST_HASH}_vercel-next.js" "query-docs libraryId creates full-id marker"
+  assert_file_exists "/tmp/.claude_c7_${TEST_HASH}_next.js" "query-docs libraryId credits last path segment"
+  teardown_test_project
+}
+
 # --- Test: ignores non-Context7 tools for c7 markers ---
 test_ignores_other_tools_for_c7() {
   setup_test_project
@@ -172,78 +183,85 @@ test_ignores_skill_tool_for_c7() {
 }
 
 # =============================================
-# Sync tracking (was sync-tracker.sh)
+# Sync tracking + post-commit reset (HEAD-movement based)
 # =============================================
 
-# --- Test: successful commit clears plan_active marker ---
-test_commit_clears_plan_active() {
+# --- Test: successful commit (HEAD moved) clears markers and updates last_head ---
+test_successful_commit_clears_markers() {
   setup_test_project
-  touch "/tmp/.claude_plan_active_${TEST_HASH}"
-  INPUT='{"tool_name":"Bash","tool_input":{"command":"git commit -m \"test\""},"tool_response":{"exit_code":"0"}}'
-  run_hook "$HOOK" "$INPUT" >/dev/null 2>&1
-  assert_file_not_exists "/tmp/.claude_plan_active_${TEST_HASH}" "commit should clear plan_active marker"
-  teardown_test_project
-}
-
-# --- Test: failed commit does NOT clear plan_active marker ---
-test_failed_commit_keeps_plan_active() {
-  setup_test_project
-  touch "/tmp/.claude_plan_active_${TEST_HASH}"
-  INPUT='{"tool_name":"Bash","tool_input":{"command":"git commit -m \"test\""},"tool_response":{"exit_code":"1"}}'
-  run_hook "$HOOK" "$INPUT" >/dev/null 2>&1
-  assert_file_exists "/tmp/.claude_plan_active_${TEST_HASH}" "failed commit should keep plan_active marker"
-  teardown_test_project
-}
-
-# =============================================
-# Marker persistence (was test-marker-persistence.sh)
-# =============================================
-
-# --- Test: markers cleared after successful git commit ---
-test_markers_cleared_after_commit() {
-  setup_test_project
+  git -C "$TEST_DIR" rev-parse HEAD > "/tmp/.claude_last_head_${TEST_HASH}"
   touch "/tmp/.claude_evaluated_${TEST_HASH}"
   touch "/tmp/.claude_superpowers_${TEST_HASH}"
-  COMMIT_INPUT='{"tool_name":"Bash","tool_input":{"command":"git commit -m \"Add feature\""},"tool_response":{"exit_code":"0"}}'
-  run_hook "$HOOK" "$COMMIT_INPUT" >/dev/null
-  assert_file_not_exists "/tmp/.claude_evaluated_${TEST_HASH}" "evaluated marker should be cleared after commit"
-  assert_file_not_exists "/tmp/.claude_superpowers_${TEST_HASH}" "superpowers marker should be cleared after commit"
+  touch "/tmp/.claude_plan_active_${TEST_HASH}"
+  # Make a real commit so HEAD moves
+  echo x >> "$TEST_DIR/README.md"
+  git -C "$TEST_DIR" add .
+  git -C "$TEST_DIR" commit -m "x" --quiet
+  NEW_HEAD=$(git -C "$TEST_DIR" rev-parse HEAD)
+  INPUT=$(jq -c --arg cmd "git commit -m x" '.tool_input.command=$cmd' "$FIXTURE_BASH")
+  run_hook "$HOOK" "$INPUT" >/dev/null 2>&1
+  assert_file_not_exists "/tmp/.claude_evaluated_${TEST_HASH}" "successful commit clears evaluated marker"
+  assert_file_not_exists "/tmp/.claude_superpowers_${TEST_HASH}" "successful commit clears superpowers marker"
+  assert_file_not_exists "/tmp/.claude_plan_active_${TEST_HASH}" "successful commit clears plan_active marker"
+  assert_equals "$NEW_HEAD" "$(cat /tmp/.claude_last_head_${TEST_HASH})" "last_head updated to new HEAD"
+  rm -f "/tmp/.claude_last_head_${TEST_HASH}"
+  teardown_test_project
+}
+
+# --- Test: failed commit (HEAD unchanged) keeps markers ---
+test_failed_commit_keeps_markers() {
+  setup_test_project
+  git -C "$TEST_DIR" rev-parse HEAD > "/tmp/.claude_last_head_${TEST_HASH}"
+  touch "/tmp/.claude_evaluated_${TEST_HASH}"
+  touch "/tmp/.claude_superpowers_${TEST_HASH}"
+  touch "/tmp/.claude_plan_active_${TEST_HASH}"
+  # Do NOT commit — HEAD is unchanged from last_head
+  INPUT=$(jq -c --arg cmd "git commit -m x" '.tool_input.command=$cmd' "$FIXTURE_BASH")
+  run_hook "$HOOK" "$INPUT" >/dev/null 2>&1
+  assert_file_exists "/tmp/.claude_evaluated_${TEST_HASH}" "failed commit keeps evaluated marker"
+  assert_file_exists "/tmp/.claude_superpowers_${TEST_HASH}" "failed commit keeps superpowers marker"
+  assert_file_exists "/tmp/.claude_plan_active_${TEST_HASH}" "failed commit keeps plan_active marker"
+  rm -f "/tmp/.claude_last_head_${TEST_HASH}"
   teardown_test_project
 }
 
 # --- Test: markers survive non-commit commands ---
 test_markers_survive_non_commit() {
   setup_test_project
+  git -C "$TEST_DIR" rev-parse HEAD > "/tmp/.claude_last_head_${TEST_HASH}"
   touch "/tmp/.claude_evaluated_${TEST_HASH}"
   touch "/tmp/.claude_superpowers_${TEST_HASH}"
-  STATUS_INPUT='{"tool_name":"Bash","tool_input":{"command":"git status"},"tool_response":{"exit_code":"0"}}'
+  STATUS_INPUT=$(jq -c --arg cmd "git status" '.tool_input.command=$cmd' "$FIXTURE_BASH")
   run_hook "$HOOK" "$STATUS_INPUT" >/dev/null
   assert_file_exists "/tmp/.claude_evaluated_${TEST_HASH}" "evaluated marker should survive non-commit"
   assert_file_exists "/tmp/.claude_superpowers_${TEST_HASH}" "superpowers marker should survive non-commit"
+  rm -f "/tmp/.claude_last_head_${TEST_HASH}"
   teardown_test_project
 }
 
-# --- Test: chained commit still clears markers ---
+# --- Test: chained commit still clears markers when HEAD moved ---
 test_chained_commit_clears_markers() {
   setup_test_project
+  git -C "$TEST_DIR" rev-parse HEAD > "/tmp/.claude_last_head_${TEST_HASH}"
   touch "/tmp/.claude_evaluated_${TEST_HASH}"
   touch "/tmp/.claude_superpowers_${TEST_HASH}"
-  INPUT='{"tool_name":"Bash","tool_input":{"command":"cd . && git commit -m \"test\""},"tool_response":{"exit_code":"0"}}'
+  echo x >> "$TEST_DIR/README.md"
+  git -C "$TEST_DIR" add .
+  git -C "$TEST_DIR" commit -m "x" --quiet
+  INPUT=$(jq -c --arg cmd "cd . && git commit -m x" '.tool_input.command=$cmd' "$FIXTURE_BASH")
   run_hook "$HOOK" "$INPUT" >/dev/null 2>&1
   assert_file_not_exists "/tmp/.claude_evaluated_${TEST_HASH}" "chained commit should clear evaluated marker"
   assert_file_not_exists "/tmp/.claude_superpowers_${TEST_HASH}" "chained commit should clear superpowers marker"
+  rm -f "/tmp/.claude_last_head_${TEST_HASH}"
   teardown_test_project
 }
 
-# --- Test: markers survive failed commit ---
-test_markers_survive_failed_commit() {
+# --- Test: interrupted sync does NOT create changelog_synced marker ---
+test_sync_marker_created_when_not_interrupted() {
   setup_test_project
-  touch "/tmp/.claude_evaluated_${TEST_HASH}"
-  touch "/tmp/.claude_superpowers_${TEST_HASH}"
-  FAIL_INPUT='{"tool_name":"Bash","tool_input":{"command":"git commit -m \"fail\""},"tool_response":{"exit_code":"1"}}'
-  run_hook "$HOOK" "$FAIL_INPUT" >/dev/null
-  assert_file_exists "/tmp/.claude_evaluated_${TEST_HASH}" "evaluated marker should survive failed commit"
-  assert_file_exists "/tmp/.claude_superpowers_${TEST_HASH}" "superpowers marker should survive failed commit"
+  INPUT=$(jq -c --arg cmd "bash sync-changelog.sh" '.tool_input.command=$cmd' "$FIXTURE_BASH")
+  run_hook "$HOOK" "$INPUT" >/dev/null 2>&1
+  assert_file_exists "/tmp/.claude_changelog_synced_${TEST_HASH}" "completed sync should create changelog_synced marker"
   teardown_test_project
 }
 
@@ -270,16 +288,16 @@ test_creates_marker_on_get_docs
 test_creates_marker_on_plugin_resolve
 test_creates_marker_on_plugin_get_docs
 test_creates_marker_on_query_docs
+test_query_docs_libraryId_credits_both
 test_normalizes_scoped_names
 test_ignores_other_tools_for_c7
 test_ignores_skill_tool_for_c7
 
-# Sync tracking + marker persistence
-test_commit_clears_plan_active
-test_failed_commit_keeps_plan_active
-test_markers_cleared_after_commit
-test_chained_commit_clears_markers
+# Sync tracking + post-commit reset (HEAD-movement based)
+test_successful_commit_clears_markers
+test_failed_commit_keeps_markers
 test_markers_survive_non_commit
-test_markers_survive_failed_commit
+test_chained_commit_clears_markers
+test_sync_marker_created_when_not_interrupted
 
 run_tests

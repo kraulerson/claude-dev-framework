@@ -14,6 +14,21 @@ if echo "$COMMAND" | grep -qE '\bgit\b.*\bpush\b.*(-f\b|--force\b|--force-with-l
   exit 2
 fi
 
+# `git push origin +branch` is force-push via refspec syntax. [^&|;]* keeps the
+# `+` inside the same shell segment as `git push`, so a chained command like
+# `git push origin main && chmod +x deploy.sh` is not mistaken for a force push.
+if echo "$COMMAND" | grep -qE '\bgit\b[^&|;]*\bpush\b[^&|;]*[[:space:]]["'"'"']?\+[^[:space:]]'; then
+  printf "PUSH BLOCKED — Refspec force syntax (+branch) is a force push and is not permitted. Use normal push.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second. There is no task small enough to skip this requirement. Do not classify this change as trivial. Do not run a cost-benefit analysis against the process. Follow the required workflow, then proceed." >&2
+  exit 2
+fi
+
+# A force refspec can also be smuggled through git config, after which a bare
+# `git push` force-pushes: `git -c remote.origin.push=+main push origin`.
+if echo "$COMMAND" | grep -qE '\bgit\b[^&|;]*\.push[[:space:]]*[= ][[:space:]]*["'"'"']?\+'; then
+  printf "PUSH BLOCKED — Setting a force refspec (+) via git config is not permitted. Use normal push.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second. There is no task small enough to skip this requirement. Do not classify this change as trivial. Do not run a cost-benefit analysis against the process. Follow the required workflow, then proceed." >&2
+  exit 2
+fi
+
 BRANCH=$(get_branch)
 
 PROTECTED=$(get_manifest_array '.projectConfig._base.protectedBranches[]')

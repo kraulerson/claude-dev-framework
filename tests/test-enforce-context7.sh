@@ -106,6 +106,35 @@ test_degraded_skips() {
   teardown_test_project
 }
 
+# --- Test: Go string literals don't block (scan imports only) ---
+test_go_string_literal_no_block() {
+  setup_test_project
+  INPUT='{"tool_name":"Write","tool_input":{"file_path":"main.go","content":"package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hello world\")\n}\n"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "0" "$EXIT_CODE" "Go string literal in code body should not block"
+  teardown_test_project
+}
+
+# --- Test: Go third-party import still blocks ---
+test_go_third_party_import_blocks() {
+  setup_test_project
+  INPUT='{"tool_name":"Write","tool_input":{"file_path":"main.go","content":"package main\n\nimport \"github.com/gin-gonic/gin\"\n\nfunc main() {\n\tr := gin.Default()\n\t_ = r\n}\n"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  RESULT=$(run_hook "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "Go third-party import should block"
+  assert_contains "$RESULT" "github.com/gin-gonic/gin" "should name the import path"
+  teardown_test_project
+}
+
+# --- Test: Go import block form with unrelated string literal ---
+test_go_import_block_no_block() {
+  setup_test_project
+  INPUT='{"tool_name":"Write","tool_input":{"file_path":"main.go","content":"package main\n\nimport (\n\t\"fmt\"\n\t\"os\"\n)\n\nfunc main() {\n\tfmt.Println(\"github.com/some/thing\")\n\t_ = os.Args\n}\n"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "0" "$EXIT_CODE" "Go import block with only stdlib should pass despite string literal"
+  teardown_test_project
+}
+
 # --- Test: test file passes even with third-party imports ---
 test_test_file_with_imports_passes() {
   setup_test_project
@@ -127,5 +156,8 @@ test_python_from_import
 test_python_future_import_passes
 test_edit_reads_new_string
 test_degraded_skips
+test_go_string_literal_no_block
+test_go_third_party_import_blocks
+test_go_import_block_no_block
 test_test_file_with_imports_passes
 run_tests

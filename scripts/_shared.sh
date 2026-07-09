@@ -14,20 +14,21 @@ generate_settings_json() {
     local event="" matcher=""
     case "$hook" in
       session-start)        event="SessionStart"; matcher="" ;;
+      session-end)          event="SessionEnd";   matcher="" ;;
+      compliance-reinforce) event="UserPromptSubmit"; matcher="" ;;
       enforce-evaluate)     event="PreToolUse";   matcher="Bash" ;;
-      enforce-superpowers)  event="PreToolUse";   matcher="Write|Edit" ;;
+      enforce-superpowers)  event="PreToolUse";   matcher="Write|Edit|NotebookEdit" ;;
       pre-commit-checks)    event="PreToolUse";   matcher="Bash" ;;
       branch-safety)        event="PreToolUse";   matcher="Bash" ;;
       stop-checklist)       event="Stop";         matcher="" ;;
-      pre-compact-reminder) event="PreCompact";   matcher="" ;;
-      changelog-sync-check) event="PreToolUse";   matcher="Write|Edit" ;;
+      changelog-sync-check) event="PreToolUse";   matcher="Write|Edit|NotebookEdit" ;;
       marker-tracker)       event="PostToolUse";  matcher="" ;;
-      scalability-check)    event="PreToolUse";   matcher="Write|Edit" ;;
+      scalability-check)    event="PreToolUse";   matcher="Write|Edit|NotebookEdit" ;;
       pre-deploy-check)     event="PreToolUse";   matcher="Bash" ;;
-      marker-guard)         event="PreToolUse";   matcher="Bash" ;;
-      config-guard)         event="PreToolUse";   matcher="Bash|Write|Edit" ;;
-      enforce-plan-tracking) event="PreToolUse";  matcher="Write|Edit" ;;
-      enforce-context7)      event="PreToolUse";   matcher="Write|Edit" ;;
+      marker-guard)         event="PreToolUse";   matcher="Bash|Write|Edit|NotebookEdit" ;;
+      config-guard)         event="PreToolUse";   matcher="Bash|Write|Edit|NotebookEdit" ;;
+      enforce-plan-tracking) event="PreToolUse";  matcher="Write|Edit|NotebookEdit" ;;
+      enforce-context7)      event="PreToolUse";   matcher="Write|Edit|NotebookEdit" ;;
       verification-gate)     event="PreToolUse";   matcher="Bash" ;;
       *) continue ;;
     esac
@@ -35,8 +36,21 @@ generate_settings_json() {
       '{event:$e,matcher:$m,command:$c}')"$'\n'
   done
 
+  # Static defense-in-depth permission rules (R-08). Leading `/` anchors at the
+  # project root; `//` is an absolute filesystem path — current Claude Code
+  # permission-rule syntax. Enforced by the harness before hooks run.
+  local deny_rules
+  deny_rules=$(jq -n '[
+    "Edit(/.claude/settings.json)",       "Write(/.claude/settings.json)",
+    "Edit(/.claude/settings.local.json)", "Write(/.claude/settings.local.json)",
+    "Edit(/.claude/manifest.json)",       "Write(/.claude/manifest.json)",
+    "Edit(/.claude/framework/**)",        "Write(/.claude/framework/**)",
+    "Edit(//tmp/.claude_*)",              "Write(//tmp/.claude_*)",
+    "Edit(//private/tmp/.claude_*)",      "Write(//private/tmp/.claude_*)"
+  ] | sort')
+
   # Let jq handle all grouping and JSON assembly
-  echo "$entries" | jq -s --arg prefix "$prefix" '
+  echo "$entries" | jq -s --argjson deny "$deny_rules" '
     group_by(.event + "\u0000" + .matcher) |
     map({
       event: .[0].event,
@@ -53,7 +67,7 @@ generate_settings_json() {
       )
     }) |
     from_entries |
-    {hooks: .}
+    {hooks: ., permissions: {deny: $deny}}
   '
 }
 
@@ -61,13 +75,17 @@ generate_settings_json() {
 # Usage: merge_hooks_into_settings hooks_json settings_file
 merge_hooks_into_settings() {
   local settings_json="$1" settings_file="$2"
-  local hooks_part
+  local hooks_part perms_part
   hooks_part=$(echo "$settings_json" | jq '.hooks')
+  perms_part=$(echo "$settings_json" | jq '.permissions.deny // []')
 
   if [ -f "$settings_file" ] && jq '.' "$settings_file" >/dev/null 2>&1; then
     local existing
     existing=$(cat "$settings_file")
-    echo "$existing" | jq --argjson h "$hooks_part" '. + {hooks: $h}' > "${settings_file}.tmp"
+    echo "$existing" | jq --argjson h "$hooks_part" --argjson d "$perms_part" '
+      . + {hooks: $h}
+      | .permissions = ((.permissions // {}) | .deny = (((.deny // []) + $d) | unique | sort))
+    ' > "${settings_file}.tmp"
     mv "${settings_file}.tmp" "$settings_file"
   else
     echo "$settings_json" > "$settings_file"

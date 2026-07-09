@@ -9,7 +9,7 @@ HOOK="$HOOK_DIR/session-start.sh"
 # --- Test: output contains compliance directive ---
 test_has_directive() {
   setup_test_project
-  RESULT=$(run_hook "$HOOK" "")
+  RESULT=$(run_hook "$HOOK" '{"source":"startup"}')
   assert_contains "$RESULT" "FRAMEWORK COMPLIANCE DIRECTIVE" "should contain directive"
   teardown_test_project
 }
@@ -17,7 +17,7 @@ test_has_directive() {
 # --- Test: output contains ZONES ARMED section ---
 test_has_zones() {
   setup_test_project
-  RESULT=$(run_hook "$HOOK" "")
+  RESULT=$(run_hook "$HOOK" '{"source":"startup"}')
   assert_contains "$RESULT" "ZONES ARMED" "should contain zones section"
   assert_contains "$RESULT" "Discovery" "should list Discovery zone"
   assert_contains "$RESULT" "Design" "should list Design zone"
@@ -30,7 +30,7 @@ test_has_zones() {
 # --- Test: output does NOT contain old ACTIVE RULES section ---
 test_no_rules_listing() {
   setup_test_project
-  RESULT=$(run_hook "$HOOK" "")
+  RESULT=$(run_hook "$HOOK" '{"source":"startup"}')
   assert_not_contains "$RESULT" "ACTIVE RULES" "should not list individual rules"
   teardown_test_project
 }
@@ -38,7 +38,7 @@ test_no_rules_listing() {
 # --- Test: output contains profile/branch/rules summary line ---
 test_summary_line() {
   setup_test_project
-  RESULT=$(run_hook "$HOOK" "")
+  RESULT=$(run_hook "$HOOK" '{"source":"startup"}')
   assert_contains "$RESULT" "Profile:" "should contain Profile"
   assert_contains "$RESULT" "Branch:" "should contain Branch"
   assert_contains "$RESULT" "Rules:" "should contain Rules count"
@@ -48,7 +48,7 @@ test_summary_line() {
 # --- Test: output does NOT contain old banner format ---
 test_no_old_banner() {
   setup_test_project
-  RESULT=$(run_hook "$HOOK" "")
+  RESULT=$(run_hook "$HOOK" '{"source":"startup"}')
   assert_not_contains "$RESULT" "=== CLAUDE DEV FRAMEWORK" "should not have old banner"
   assert_not_contains "$RESULT" "WORKFLOW ENFORCEMENT" "should not have old workflow section"
   teardown_test_project
@@ -57,8 +57,68 @@ test_no_old_banner() {
 # --- Test: exit code is always 0 ---
 test_exit_zero() {
   setup_test_project
-  EXIT_CODE=$(run_hook_exit_code "$HOOK" "")
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" '{"source":"startup"}')
   assert_exit_code "0" "$EXIT_CODE" "should always exit 0"
+  teardown_test_project
+}
+
+# --- Test: existing output assertions still pass with empty stdin (manual run) ---
+test_empty_stdin_still_outputs() {
+  setup_test_project
+  RESULT=$(run_hook "$HOOK" "")
+  assert_contains "$RESULT" "FRAMEWORK COMPLIANCE DIRECTIVE" "empty stdin treated as startup"
+  assert_contains "$RESULT" "ZONES ARMED" "empty stdin still emits zones"
+  teardown_test_project
+}
+
+# --- Test: startup clears pre-seeded workflow markers (R-06) ---
+test_startup_clears_markers() {
+  setup_test_project
+  touch "/tmp/.claude_superpowers_${TEST_HASH}"
+  touch "/tmp/.claude_evaluated_${TEST_HASH}"
+  touch "/tmp/.claude_c7_${TEST_HASH}_react"
+  run_hook "$HOOK" '{"source":"startup"}' >/dev/null 2>&1
+  assert_file_not_exists "/tmp/.claude_superpowers_${TEST_HASH}" "startup clears superpowers"
+  assert_file_not_exists "/tmp/.claude_evaluated_${TEST_HASH}" "startup clears evaluated"
+  assert_file_not_exists "/tmp/.claude_c7_${TEST_HASH}_react" "startup clears c7 markers"
+  rm -f "/tmp/.claude_last_head_${TEST_HASH}"
+  teardown_test_project
+}
+
+# --- Test: resume does NOT clear markers or overwrite session_start (R-20) ---
+test_resume_preserves_markers() {
+  setup_test_project
+  touch "/tmp/.claude_superpowers_${TEST_HASH}"
+  touch "/tmp/.claude_evaluated_${TEST_HASH}"
+  echo "SEEDED_HEAD_VALUE" > "/tmp/.claude_session_start_${TEST_HASH}"
+  run_hook "$HOOK" '{"source":"resume"}' >/dev/null 2>&1
+  assert_file_exists "/tmp/.claude_superpowers_${TEST_HASH}" "resume preserves superpowers"
+  assert_file_exists "/tmp/.claude_evaluated_${TEST_HASH}" "resume preserves evaluated"
+  SS=$(cat "/tmp/.claude_session_start_${TEST_HASH}" 2>/dev/null || echo "")
+  assert_equals "SEEDED_HEAD_VALUE" "$SS" "resume does not overwrite existing session_start"
+  rm -f "/tmp/.claude_last_head_${TEST_HASH}"
+  teardown_test_project
+}
+
+# --- Test: compact source emits post-compaction recovery message (R-05) ---
+test_compact_recovery_message() {
+  setup_test_project
+  RESULT=$(run_hook "$HOOK" '{"source":"compact"}')
+  assert_contains "$RESULT" "POST-COMPACTION RECOVERY" "compact emits recovery guidance"
+  rm -f "/tmp/.claude_last_head_${TEST_HASH}"
+  teardown_test_project
+}
+
+# --- Test: startup writes both session_start and last_head files ---
+test_startup_writes_head_markers() {
+  setup_test_project
+  run_hook "$HOOK" '{"source":"startup"}' >/dev/null 2>&1
+  assert_file_exists "/tmp/.claude_session_start_${TEST_HASH}" "startup writes session_start"
+  assert_file_exists "/tmp/.claude_last_head_${TEST_HASH}" "startup writes last_head"
+  EXPECTED=$(git -C "$TEST_DIR" rev-parse HEAD)
+  ACTUAL=$(cat "/tmp/.claude_last_head_${TEST_HASH}" 2>/dev/null || echo "")
+  assert_equals "$EXPECTED" "$ACTUAL" "last_head equals current HEAD"
+  rm -f "/tmp/.claude_last_head_${TEST_HASH}"
   teardown_test_project
 }
 
@@ -70,4 +130,9 @@ test_no_rules_listing
 test_summary_line
 test_no_old_banner
 test_exit_zero
+test_empty_stdin_still_outputs
+test_startup_clears_markers
+test_resume_preserves_markers
+test_compact_recovery_message
+test_startup_writes_head_markers
 run_tests

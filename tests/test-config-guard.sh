@@ -232,6 +232,100 @@ test_allows_project_dir_read() {
   teardown_test_project
 }
 
+# =============================================
+# Bare .claude destruction (R-12) + relative paths + NotebookEdit + injection
+# =============================================
+
+# --- Test: blocks rm -rf .claude (bare, no trailing slash) ---
+test_blocks_rm_bare_claude() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"rm -rf .claude"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "should block rm -rf .claude"
+  teardown_test_project
+}
+
+# --- Test: allows rm -rf .claude-backup (must not false-positive) ---
+test_allows_rm_claude_backup() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"rm -rf .claude-backup"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "0" "$EXIT_CODE" "should allow rm -rf .claude-backup"
+  teardown_test_project
+}
+
+# --- Test: blocks Write with a relative .claude/settings.json path ---
+test_blocks_write_relative_settings() {
+  setup_test_project
+  INPUT='{"tool_name":"Write","tool_input":{"file_path":".claude/settings.json","content":"{}"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "should block Write to relative .claude/settings.json"
+  teardown_test_project
+}
+
+# --- Test: blocks NotebookEdit to a framework path ---
+test_blocks_notebookedit_framework() {
+  setup_test_project
+  INPUT='{"tool_name":"NotebookEdit","tool_input":{"notebook_path":".claude/framework/x.ipynb","new_source":""}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "should block NotebookEdit to framework path"
+  teardown_test_project
+}
+
+# --- Test: injection via chained mark-evaluated.sh does not unlock (R-11) ---
+test_blocks_mark_evaluated_injection() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"sed -i '"'"''"'"' .claude/manifest.json && echo mark-evaluated.sh"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "chained mark-evaluated.sh must not unlock the guard"
+  teardown_test_project
+}
+
+# --- Test: rm -rf .claude/ (trailing slash) is blocked (R-12) ---
+test_blocks_rm_claude_trailing_slash() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"rm -rf .claude/"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "should block rm -rf .claude/ with trailing slash"
+  teardown_test_project
+}
+
+# --- Test: rm -rf .claude/* (glob) is blocked (R-12) ---
+test_blocks_rm_claude_glob() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"rm -rf .claude/*"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "should block rm -rf .claude/* glob"
+  teardown_test_project
+}
+
+# --- Test: rm -rf .claude/framework (subdir path) is blocked (R-12) ---
+test_blocks_rm_claude_subdir() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"rm -rf .claude/framework/hooks"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "should block rm -rf .claude/framework/hooks"
+  teardown_test_project
+}
+
+# --- Test: mv .claude/ to another dir is blocked (R-12) ---
+test_blocks_mv_claude_slash() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"mv .claude/ /tmp/x"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "should block mv .claude/ /tmp/x"
+  teardown_test_project
+}
+
+# --- Test: lone mark-evaluated.sh with a redirect must not unlock (R-11) ---
+test_blocks_mark_evaluated_redirect() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-evaluated.sh reason > .claude/settings.json"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "redirect after mark-evaluated.sh must not unlock the guard"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "config-guard.sh"
 test_blocks_write_settings
@@ -257,4 +351,14 @@ test_allows_git_blame_manifest
 test_blocks_git_add_manifest
 test_blocks_git_checkout_settings
 test_blocks_git_rm_framework_hook
+test_blocks_rm_bare_claude
+test_allows_rm_claude_backup
+test_blocks_write_relative_settings
+test_blocks_notebookedit_framework
+test_blocks_mark_evaluated_injection
+test_blocks_rm_claude_trailing_slash
+test_blocks_rm_claude_glob
+test_blocks_rm_claude_subdir
+test_blocks_mv_claude_slash
+test_blocks_mark_evaluated_redirect
 run_tests

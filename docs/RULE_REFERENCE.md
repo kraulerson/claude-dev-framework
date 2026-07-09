@@ -9,7 +9,7 @@
 | naming-conventions | Follow established naming patterns and language-standard conventions | session-start.sh (context injection) | N/A — always applies |
 | version-bump | Bump version before committing source changes | pre-commit-checks.sh | Doc-only commits |
 | changelog-update | Update changelog alongside source commits | pre-commit-checks.sh | Doc-only commits |
-| context-management | Save context history before compression, reload after | pre-compact-reminder.sh + stop-checklist.sh | Short sessions |
+| context-management | Save context history before compression, reload after | session-start.sh (post-compaction recovery) + stop-checklist.sh | Short sessions |
 | session-discipline | Commit before ending, imperative commit messages, verify builds | stop-checklist.sh | N/A |
 | observability | Evaluate monitoring/logging needs, never swallow errors | session-start.sh (context injection) | Internal utilities |
 | superpowers-workflow | Use Superpowers brainstorm/plan/implement for non-trivial work | enforce-superpowers.sh | Trivial changes, user says "skip" |

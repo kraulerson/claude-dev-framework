@@ -3,15 +3,18 @@
 #
 # Pending-approval sentinel: if ${CLAUDE_PROJECT_DIR:-.}/.claude/pending-approval.json
 # exists, the agent is holding on a user decision — exit 0 silently (no block
-# JSON, no stderr advisory). Agent deletes the file when the user picks.
+# JSON, no advisory). Agent deletes the file when the user picks.
 # Staleness (orphaned file after a crash) is not handled here; `rm` manually.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/_helpers.sh" 2>/dev/null || exit 0
 
 INPUT=$(cat)
-STOP_REASON=$(echo "$INPUT" | jq -r '.stop_reason // empty' 2>/dev/null || echo "")
-[ "$STOP_REASON" = "user" ] || [ "$STOP_REASON" = "tool_error" ] && exit 0
+# stop_hook_active=true means Claude is already continuing because this hook
+# blocked a previous stop this turn — exit 0 to prevent an infinite block loop.
+# (Real Stop input carries no reason/kind field; this flag is the only loop signal.)
+STOP_HOOK_ACTIVE=$(echo "$INPUT" | jq -r '.stop_hook_active // false' 2>/dev/null || echo "false")
+[[ "$STOP_HOOK_ACTIVE" = "true" ]] && exit 0
 
 # Pending-approval sentinel: existence alone means "in flight" — malformed/empty content still counts, per spec.
 PENDING_APPROVAL="${CLAUDE_PROJECT_DIR:-.}/.claude/pending-approval.json"
@@ -22,9 +25,12 @@ CHANGELOG=$(get_branch_config_value '.changelogFile')
 CTX_HISTORY=$(get_branch_config_value '.contextHistoryFile')
 SESSION_START=$(cat "/tmp/.claude_session_start_${HASH}" 2>/dev/null || echo "")
 
-DIRTY=$(git diff --name-only 2>/dev/null || true)
 STAGED=$(git diff --cached --name-only 2>/dev/null || true)
-ALL=$(printf "%s\n%s" "$DIRTY" "$STAGED" | sort -u | grep -v '^$' || true)
+# git status --porcelain covers modified + staged + untracked (??). Strip the
+# 3-char status prefix, rename arrows, and quoting around paths with spaces.
+ALL=$(git status --porcelain 2>/dev/null \
+  | sed -e 's/^...//' -e 's/.* -> //' -e 's/^"//' -e 's/"$//' \
+  | sort -u | grep -v '^$' || true)
 
 HAS_SOURCE=false
 if [ -n "$ALL" ]; then
@@ -127,8 +133,14 @@ if [ -n "$SESSION_START" ]; then
 
     if [ -n "$ADVISORIES" ]; then
       MSG=$(printf "Session produced %s commit(s).\n\n%b" "$SESSION_COMMITS" "$ADVISORIES")
-      # SOLO_ORCHESTRATOR_STOP_HOOK_PATCH — advisory via stderr, not invalid JSON
-      echo "$MSG" >&2
+      # Stop hooks support hookSpecificOutput.additionalContext as of Claude Code >= 2.x (2026),
+      # so the advisory is delivered as structured context rather than stderr.
+      jq -n --arg ctx "$MSG" '{
+        "hookSpecificOutput": {
+          "hookEventName": "Stop",
+          "additionalContext": $ctx
+        }
+      }'
     fi
   fi
 fi

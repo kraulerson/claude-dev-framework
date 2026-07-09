@@ -17,6 +17,9 @@ source "$SCRIPT_DIR/helpers/assert.sh"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 INIT_SCRIPT="$REPO_DIR/scripts/init.sh"
 
+# shellcheck source=/dev/null
+source "$REPO_DIR/scripts/_shared.sh"
+
 # --- Helpers ---
 
 setup_project() {
@@ -274,6 +277,124 @@ test_context7_declined() {
   teardown
 }
 
+# =====================================================================
+# TEST 11: generate_settings_json — matchers, new hooks, no pre-compact
+# =====================================================================
+test_generate_settings_matchers() {
+  local out
+  out=$(generate_settings_json session-start compliance-reinforce enforce-superpowers \
+    stop-checklist session-end marker-guard config-guard marker-tracker \
+    enforce-plan-tracking enforce-context7 changelog-sync-check scalability-check \
+    verification-gate pre-compact-reminder)
+
+  # Valid JSON
+  echo "$out" | jq -e '.' >/dev/null 2>&1
+  assert_equals "0" "$?" "generate: output is valid JSON"
+
+  # NotebookEdit matcher present on the file-tool hooks
+  assert_contains "$out" "Write|Edit|NotebookEdit" "generate: file-tool matchers include NotebookEdit"
+
+  # marker-guard / config-guard cover Bash + file tools
+  assert_contains "$out" "Bash|Write|Edit|NotebookEdit" "generate: guard matchers include Bash+file tools"
+
+  # New event groups exist
+  assert_contains "$out" "SessionEnd" "generate: SessionEnd group present"
+  assert_contains "$out" "UserPromptSubmit" "generate: UserPromptSubmit group present"
+
+  # New hook commands registered
+  assert_contains "$out" "session-end.sh" "generate: session-end registered"
+  assert_contains "$out" "compliance-reinforce.sh" "generate: compliance-reinforce registered"
+
+  # pre-compact-reminder removed entirely (no case entry)
+  assert_not_contains "$out" "pre-compact-reminder" "generate: pre-compact-reminder not registered"
+  assert_not_contains "$out" "PreCompact" "generate: no PreCompact event"
+}
+
+# =====================================================================
+# TEST 12: generate_settings_json — permissions.deny block
+# =====================================================================
+test_generate_settings_permissions() {
+  local out
+  out=$(generate_settings_json session-start marker-guard)
+
+  assert_contains "$out" "permissions" "generate: permissions key present"
+
+  # Deny rule for markers present
+  local has_rule
+  has_rule=$(echo "$out" | jq -r '.permissions.deny | index("Edit(//tmp/.claude_*)") // empty' 2>/dev/null || echo "")
+  TESTS_RUN=$((TESTS_RUN + 1))
+  if [ -n "$has_rule" ]; then
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    FAILURES="${FAILURES}  FAIL: generate: deny contains Edit(//tmp/.claude_*)\n    got: '$(echo "$out" | jq -c '.permissions.deny')'\n"
+  fi
+
+  # Config deny rule present
+  local has_config
+  has_config=$(echo "$out" | jq -r '.permissions.deny | index("Write(/.claude/settings.json)") // empty' 2>/dev/null || echo "")
+  TESTS_RUN=$((TESTS_RUN + 1))
+  if [ -n "$has_config" ]; then
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    FAILURES="${FAILURES}  FAIL: generate: deny contains Write(/.claude/settings.json)\n"
+  fi
+}
+
+# =====================================================================
+# TEST 13: merge_hooks_into_settings — preserves user deny rules
+# =====================================================================
+test_merge_preserves_user_deny() {
+  local tmp settings_json
+  tmp=$(mktemp -d)
+  # Seed an existing settings file with a user-defined deny rule and other key
+  echo '{"model":"opus","permissions":{"deny":["WebFetch"]}}' > "$tmp/settings.json"
+
+  settings_json=$(generate_settings_json session-start marker-guard)
+  merge_hooks_into_settings "$settings_json" "$tmp/settings.json"
+
+  # User rule preserved
+  local has_web
+  has_web=$(jq -r '.permissions.deny | index("WebFetch") // empty' "$tmp/settings.json" 2>/dev/null || echo "")
+  TESTS_RUN=$((TESTS_RUN + 1))
+  if [ -n "$has_web" ]; then
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    FAILURES="${FAILURES}  FAIL: merge: preserves user deny rule WebFetch\n"
+  fi
+
+  # Framework rule also merged in
+  local has_marker
+  has_marker=$(jq -r '.permissions.deny | index("Edit(//tmp/.claude_*)") // empty' "$tmp/settings.json" 2>/dev/null || echo "")
+  TESTS_RUN=$((TESTS_RUN + 1))
+  if [ -n "$has_marker" ]; then
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    FAILURES="${FAILURES}  FAIL: merge: adds framework deny rule Edit(//tmp/.claude_*)\n"
+  fi
+
+  # Other user keys preserved
+  local model
+  model=$(jq -r '.model' "$tmp/settings.json" 2>/dev/null || echo "")
+  assert_equals "opus" "$model" "merge: preserves unrelated user key"
+
+  # Hooks merged
+  local has_hooks
+  has_hooks=$(jq -r '.hooks | keys | length' "$tmp/settings.json" 2>/dev/null || echo "0")
+  TESTS_RUN=$((TESTS_RUN + 1))
+  if [ "$has_hooks" -gt 0 ]; then
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    FAILURES="${FAILURES}  FAIL: merge: hooks object merged in\n"
+  fi
+
+  rm -rf "$tmp"
+}
+
 # --- Run all tests ---
 echo "install-matrix (simulated installs)"
 test_fresh_no_deps
@@ -286,4 +407,7 @@ test_prepopulate_context7_only
 test_prepopulate_both_deps
 test_skip_plugin_check
 test_context7_declined
+test_generate_settings_matchers
+test_generate_settings_permissions
+test_merge_preserves_user_deny
 run_tests
