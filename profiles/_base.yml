@@ -33,11 +33,12 @@ discovery_questions:
 
 hooks:
   - session-start
+  - compliance-reinforce
   - config-guard
   - enforce-evaluate
   - enforce-superpowers
   - stop-checklist
-  - pre-compact-reminder
+  - session-end
   - marker-tracker
   - marker-guard
   - enforce-plan-tracking

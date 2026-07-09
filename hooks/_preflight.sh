@@ -16,7 +16,7 @@ _PF_TOOL_NAME=""
 
 preflight_init() {
   _PF_INPUT=$(cat)
-  _PF_FILE_PATH=$(echo "$_PF_INPUT" | jq -r '.tool_input.file_path // .tool_input.path // empty' 2>/dev/null || echo "")
+  _PF_FILE_PATH=$(echo "$_PF_INPUT" | jq -r '.tool_input.file_path // .tool_input.notebook_path // .tool_input.path // empty' 2>/dev/null || echo "")
   _PF_TOOL_NAME=$(echo "$_PF_INPUT" | jq -r '.tool_name // empty' 2>/dev/null || echo "")
 }
 
