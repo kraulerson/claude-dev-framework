@@ -120,6 +120,12 @@ refresh_cdf_assets() {
     return 1
   fi
 
+  # No TTY → behave as non-interactive even if the caller said otherwise;
+  # prompting into a closed stdin dies under callers running set -e.
+  if [ "$non_interactive" != "true" ] && [ ! -t 0 ]; then
+    non_interactive="true"
+  fi
+
   # Missing clone: skip with warning in non-interactive; prompt with
   # explanation in interactive (Karl 2026-04-27).
   if [ ! -d "$framework_clone/.git" ]; then

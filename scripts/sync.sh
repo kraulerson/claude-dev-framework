@@ -57,11 +57,11 @@ for src in "$FRAMEWORK_CLONE"/hooks/*.sh; do
 
   if [ ! -f "$dest" ]; then
     cp "$src" "$dest"; chmod +x "$dest"
-    echo "  + $name (new)"; ((NEW++))
+    echo "  + $name (new)"; NEW=$((NEW+1))
   else
     dest_hash=$(shasum -a 256 "$dest" | cut -c1-12)
     if [ "$src_hash" = "$dest_hash" ]; then
-      ((SKIPPED++))
+      SKIPPED=$((SKIPPED+1))
     else
       # Check if locally modified
       MANIFEST_HASH=$(jq -r ".files[\"framework/hooks/$name\"].globalHash // empty" "$MANIFEST" 2>/dev/null || echo "")
@@ -71,16 +71,28 @@ for src in "$FRAMEWORK_CLONE"/hooks/*.sh; do
         echo "    (g) Take upstream version"
         echo "    (l) Keep local version"
         echo "    (d) Show diff"
-        read -rp "    Choice [g/l/d]: " choice
+        if [ -t 0 ]; then
+          read -rp "    Choice [g/l/d]: " choice
+        else
+          echo "    Non-interactive (no TTY): keeping local version."
+          choice="l"
+        fi
         case "$choice" in
-          g) cp "$src" "$dest"; chmod +x "$dest"; echo "    → Took upstream"; ((UPDATED++)) ;;
-          d) diff "$dest" "$src" || true; read -rp "    Take upstream? (y/n): " yn; [ "$yn" = "y" ] && cp "$src" "$dest" && chmod +x "$dest" && ((UPDATED++)) || ((SKIPPED++)) ;;
-          *) echo "    → Kept local"; ((SKIPPED++)) ;;
+          g) cp "$src" "$dest"; chmod +x "$dest"; echo "    → Took upstream"; UPDATED=$((UPDATED+1)) ;;
+          d)
+            diff "$dest" "$src" || true
+            yn="n"
+            if [ -t 0 ]; then
+              read -rp "    Take upstream? (y/n): " yn
+            fi
+            [ "$yn" = "y" ] && cp "$src" "$dest" && chmod +x "$dest" && UPDATED=$((UPDATED+1)) || SKIPPED=$((SKIPPED+1))
+            ;;
+          *) echo "    → Kept local"; SKIPPED=$((SKIPPED+1)) ;;
         esac
-        ((CONFLICTS++))
+        CONFLICTS=$((CONFLICTS+1))
       else
         cp "$src" "$dest"; chmod +x "$dest"
-        ((UPDATED++))
+        UPDATED=$((UPDATED+1))
       fi
     fi
   fi
@@ -92,11 +104,11 @@ for src in "$FRAMEWORK_CLONE"/rules/*.md; do
   name=$(basename "$src")
   dest=".claude/framework/rules/$name"
   if [ ! -f "$dest" ]; then
-    cp "$src" "$dest"; echo "  + $name (new)"; ((NEW++))
+    cp "$src" "$dest"; echo "  + $name (new)"; NEW=$((NEW+1))
   else
     src_hash=$(shasum -a 256 "$src" | cut -c1-12)
     dest_hash=$(shasum -a 256 "$dest" | cut -c1-12)
-    [ "$src_hash" != "$dest_hash" ] && { cp "$src" "$dest"; ((UPDATED++)); } || ((SKIPPED++))
+    [ "$src_hash" != "$dest_hash" ] && { cp "$src" "$dest"; UPDATED=$((UPDATED+1)); } || SKIPPED=$((SKIPPED+1))
   fi
 done
 

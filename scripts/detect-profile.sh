@@ -60,16 +60,17 @@ suggest_profile() {
     *reactnative*) echo "mobile-app"; return ;;
   esac
 
+  # Desktop app — must precede Web API: electron/tauri projects also carry
+  # the node signal, and *node* would otherwise claim them as web-api
+  case "$signals" in
+    *pydesktop*|*electrondesktop*) echo "desktop-app"; return ;;
+  esac
+
   # Web API (backend only, no frontend signals)
   case "$signals" in
     *pyweb*) echo "web-api"; return ;;
     *docker*node*|*docker*python*|*docker*go*|*docker*ruby*) echo "web-api"; return ;;
     *node*) echo "web-api"; return ;;
-  esac
-
-  # Desktop app
-  case "$signals" in
-    *pydesktop*|*electrondesktop*) echo "desktop-app"; return ;;
   esac
 
   echo ""
@@ -88,8 +89,8 @@ if [ -n "${1:-}" ]; then
   fi
 fi
 
-echo "=== Profile Detection ==="
-echo ""
+echo "=== Profile Detection ===" >&2
+echo "" >&2
 SIGNALS=$(detect_signals)
 SUGGESTED=$(suggest_profile "$SIGNALS")
 
@@ -108,11 +109,21 @@ if [ -n "$SUGGESTED" ]; then
     echo "  - $name: $desc$marker" >&2
   done
   echo "" >&2
-  read -rp "Use '$SUGGESTED'? (y/n/other profile name): " choice
+  if [ -t 0 ]; then
+    read -rp "Use '$SUGGESTED'? (y/n/other profile name): " choice
+  else
+    echo "Non-interactive (no TTY): using suggested profile '$SUGGESTED'." >&2
+    choice="y"
+  fi
   case "$choice" in
     y|Y|yes|"") echo "$SUGGESTED" ;;
     n|N|no)
-      read -rp "Enter profile name: " custom
+      if [ -t 0 ]; then
+        read -rp "Enter profile name: " custom
+      else
+        echo "ERROR: no TTY to prompt for a profile name." >&2
+        exit 1
+      fi
       echo "$custom"
       ;;
     *) echo "$choice" ;;
@@ -129,9 +140,20 @@ else
     echo "  - $name: $desc" >&2
   done
   echo "" >&2
-  read -rp "Select a profile (web-app, web-api, mobile-app, desktop-app, or 'new' to create one): " choice
+  if [ -t 0 ]; then
+    read -rp "Select a profile (web-app, web-api, mobile-app, desktop-app, or 'new' to create one): " choice
+  else
+    echo "ERROR: no project signals detected and no TTY to prompt for a profile." >&2
+    echo "Pass a profile explicitly: detect-profile.sh <profile>, or init.sh --profile <name>." >&2
+    exit 1
+  fi
   if [ "$choice" = "new" ]; then
-    read -rp "What kind of project is this? " project_type
+    if [ -t 0 ]; then
+      read -rp "What kind of project is this? " project_type
+    else
+      echo "ERROR: cannot create a new profile without a TTY." >&2
+      exit 1
+    fi
     PROFILE_NAME=$(echo "$project_type" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd 'a-z0-9-')
     cat > "$PROFILES_DIR/${PROFILE_NAME}.yml" << YMLEOF
 name: $PROFILE_NAME
@@ -152,9 +174,14 @@ suggests:
   changelogFile: "CHANGELOG.md"
   protectedBranches: ["main"]
 YMLEOF
-    echo "Created new profile: $PROFILE_NAME"
-    echo ""
-    read -rp "Push this profile to the global framework repo? (y/n): " push_choice
+    echo "Created new profile: $PROFILE_NAME" >&2
+    echo "" >&2
+    if [ -t 0 ]; then
+      read -rp "Push this profile to the global framework repo? (y/n): " push_choice
+    else
+      echo "Non-interactive (no TTY): not pushing the new profile. Push manually if wanted." >&2
+      push_choice="n"
+    fi
     if [ "$push_choice" = "y" ]; then
       pushd "$FRAMEWORK_DIR" > /dev/null
       git add "profiles/${PROFILE_NAME}.yml"
