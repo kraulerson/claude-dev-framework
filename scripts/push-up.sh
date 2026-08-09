@@ -13,6 +13,14 @@ if [ ! -f "$FILE_PATH" ]; then
   echo "ERROR: File not found: $FILE_PATH" >&2; exit 1
 fi
 
+# Pushing to the shared framework repo has no safe unattended default —
+# refuse headless runs outright rather than dying at the first prompt.
+if [ ! -t 0 ]; then
+  echo "ERROR: push-up.sh is interactive (it confirms before modifying the global framework repo)." >&2
+  echo "Re-run from a terminal." >&2
+  exit 1
+fi
+
 echo "=== Push-Up: Promote to Global Framework ==="
 echo "File: $FILE_PATH"
 echo "Mode: $MODE"

@@ -59,8 +59,12 @@ if [ "$ARCHIVE" = true ]; then
     if [ -n "$CANDIDATES" ]; then
       echo "Unpushed global candidates found:"
       echo "$CANDIDATES"
-      read -rp "Push these to the global framework? (y/n): " choice
-      [ "$choice" = "y" ] && echo "Run push-up.sh for each file individually."
+      if [ -t 0 ]; then
+        read -rp "Push these to the global framework? (y/n): " choice
+        [ "$choice" = "y" ] && echo "Run push-up.sh for each file individually."
+      else
+        echo "Non-interactive (no TTY): review candidates with push-up.sh when interactive."
+      fi
     else
       echo "No unpushed global candidates."
     fi
@@ -107,6 +111,15 @@ source "$FRAMEWORK_CLONE/hooks/_helpers.sh" 2>/dev/null || true
 
 # ---- Helper: Discovery Interview ----
 run_discovery() {
+  # Headless: the interview cannot run. Empty discovery is a valid manifest
+  # value (the migration path already produces it), so record that and let
+  # the operator fill it in later rather than dying mid-install.
+  if [ ! -t 0 ]; then
+    echo "WARNING: no TTY for the discovery interview — recording empty discovery." >&2
+    echo "         Re-run 'init.sh --reconfigure' interactively or pass --prepopulate <file>." >&2
+    echo "{}"
+    return 0
+  fi
   echo "" >&2
   echo "=== Project Discovery Interview ===" >&2
   echo "All questions are optional. Press Enter to skip any question." >&2

@@ -71,10 +71,22 @@ for src in "$FRAMEWORK_CLONE"/hooks/*.sh; do
         echo "    (g) Take upstream version"
         echo "    (l) Keep local version"
         echo "    (d) Show diff"
-        read -rp "    Choice [g/l/d]: " choice
+        if [ -t 0 ]; then
+          read -rp "    Choice [g/l/d]: " choice
+        else
+          echo "    Non-interactive (no TTY): keeping local version."
+          choice="l"
+        fi
         case "$choice" in
           g) cp "$src" "$dest"; chmod +x "$dest"; echo "    → Took upstream"; ((UPDATED++)) ;;
-          d) diff "$dest" "$src" || true; read -rp "    Take upstream? (y/n): " yn; [ "$yn" = "y" ] && cp "$src" "$dest" && chmod +x "$dest" && ((UPDATED++)) || ((SKIPPED++)) ;;
+          d)
+            diff "$dest" "$src" || true
+            yn="n"
+            if [ -t 0 ]; then
+              read -rp "    Take upstream? (y/n): " yn
+            fi
+            [ "$yn" = "y" ] && cp "$src" "$dest" && chmod +x "$dest" && ((UPDATED++)) || ((SKIPPED++))
+            ;;
           *) echo "    → Kept local"; ((SKIPPED++)) ;;
         esac
         ((CONFLICTS++))
