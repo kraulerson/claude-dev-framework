@@ -84,7 +84,7 @@ cd ~/.claude-dev-framework && git pull
 cd ~/your-project && bash ~/.claude-dev-framework/scripts/sync.sh
 ```
 
-The sync script compares file hashes, preserves local modifications, and handles conflicts interactively.
+The sync script compares file hashes, preserves local modifications, and handles conflicts interactively. Without a TTY (CI, agent sessions), prompts take safe defaults instead: sync keeps the local version of conflicted files, `detect-profile.sh` accepts the auto-detected profile (or exits non-zero when nothing is detected — pass `init.sh --profile <name>`), the discovery interview records empty discovery (use `--prepopulate` or re-run `init.sh --reconfigure` interactively), and `push-up.sh` refuses to run. Piped stdin counts as no-TTY: scripted answers are ignored in favor of these defaults.
 
 ## Optional: Persistent Memory MCP Servers
 

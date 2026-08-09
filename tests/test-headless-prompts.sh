@@ -40,6 +40,10 @@ make_project() {
   git -C "$(dirname "$PROJ")" init --quiet "$PROJ" 2>/dev/null || git -C "$PROJ" init --quiet
   git -C "$PROJ" config user.email "test@test.com"
   git -C "$PROJ" config user.name "Test"
+  # Remove git sample hooks: init.sh's existing-setup probe matches
+  # .git/hooks/pre-*, so leaving the samples silently flips every fresh
+  # fixture into migration mode (same precedent as test-prepopulate.sh).
+  rm -f "$PROJ/.git/hooks/pre-"*
   [ "${1:-}" = "with-claude" ] && mkdir -p "$PROJ/.claude"
   [ "${2:-}" = "with-node" ] && echo '{"name":"x","dependencies":{"express":"^4"}}' > "$PROJ/package.json"
 }
@@ -105,17 +109,34 @@ test_init_headless_repair_writes_manifest() {
 }
 
 # Fresh project (no .claude/): headless init must also survive the discovery
-# interview — empty discovery with a warning, not a mid-install death.
+# interview — empty discovery with a warning, not a mid-install death. The
+# warning assertion proves the interview path actually ran (a fixture that
+# drifts into migration mode would skip discovery and pass vacuously).
 test_init_headless_fresh_project_completes() {
   setup_fake_env
   make_project no-claude with-node
-  local rc
-  (cd "$PROJ" && bash "$CLONE/scripts/init.sh" </dev/null >/dev/null 2>&1); rc=$?
+  local err rc
+  err=$(cd "$PROJ" && bash "$CLONE/scripts/init.sh" </dev/null 2>&1 >/dev/null); rc=$?
   assert_exit_code "0" "$rc" "bare headless init.sh on fresh project should exit 0"
   assert_file_exists "$PROJ/.claude/manifest.json" "manifest must exist after fresh headless init"
+  assert_contains "$err" "no TTY for the discovery interview" \
+    "the discovery interview path must be reached and take the headless branch"
   local disc
   disc=$(jq -c '.discovery' "$PROJ/.claude/manifest.json" 2>/dev/null)
-  assert_equals "{}" "$disc" "headless discovery should record empty discovery, not fail"
+  assert_equals "{}" "$disc" "headless discovery should record empty discovery, not garbage"
+  teardown_fake_env
+}
+
+# Electron/Tauri projects carry the node signal; the desktop case must win
+# over web-api or headless auto-accept silently misconfigures desktop apps.
+test_detect_headless_electron_suggests_desktop() {
+  setup_fake_env
+  make_project
+  echo '{"name":"x","dependencies":{"electron":"^28"}}' > "$PROJ/package.json"
+  local out rc
+  out=$(cd "$PROJ" && bash "$CLONE/scripts/detect-profile.sh" </dev/null 2>/dev/null); rc=$?
+  assert_exit_code "0" "$rc" "headless detect on electron project should exit 0"
+  assert_equals "desktop-app" "$out" "electron project must suggest desktop-app, not web-api"
   teardown_fake_env
 }
 
@@ -182,15 +203,17 @@ test_pushup_headless_refuses() {
 
 # Belt-and-braces: caller said interactive but there is no TTY — behave as
 # non-interactive (skip with warning) instead of prompting into the void.
+# Runs under set -euo pipefail because that is the caller shape the override
+# protects (Solo's upgrade-project): without it, the read dying at EOF kills
+# the caller — and the test would pass vacuously via the decline branch.
 test_cdf_refresh_no_tty_skips() {
   setup_fake_env
   make_project with-claude
   mkdir -p "$PROJ/.claude/framework"
   local out rc
-  out=$(bash -c "source '$CLONE/scripts/cdf-refresh.sh' && refresh_cdf_assets '$PROJ' '$FAKE_HOME/no-such-clone' 'false'" </dev/null 2>&1); rc=$?
-  assert_exit_code "0" "$rc" "no-TTY refresh with missing clone should skip, exit 0"
+  out=$(bash -c "set -euo pipefail; source '$CLONE/scripts/cdf-refresh.sh' && refresh_cdf_assets '$PROJ' '$FAKE_HOME/no-such-clone' 'false'" </dev/null 2>&1); rc=$?
+  assert_exit_code "0" "$rc" "no-TTY refresh under set -e with missing clone should skip, exit 0"
   assert_contains "$out" "skipping CDF asset refresh" "should print the non-interactive skip warning"
-  assert_not_contains "$out" "Clone CDF now" "must not print the interactive prompt headless"
   teardown_fake_env
 }
 
@@ -199,6 +222,7 @@ echo "headless prompts (detect-profile, init, sync, push-up, cdf-refresh)"
 test_detect_headless_takes_suggested
 test_detect_headless_no_signals_errors
 test_detect_arg_path_unchanged
+test_detect_headless_electron_suggests_desktop
 test_init_headless_repair_writes_manifest
 test_init_headless_fresh_project_completes
 test_init_archive_headless

@@ -60,16 +60,17 @@ suggest_profile() {
     *reactnative*) echo "mobile-app"; return ;;
   esac
 
+  # Desktop app — must precede Web API: electron/tauri projects also carry
+  # the node signal, and *node* would otherwise claim them as web-api
+  case "$signals" in
+    *pydesktop*|*electrondesktop*) echo "desktop-app"; return ;;
+  esac
+
   # Web API (backend only, no frontend signals)
   case "$signals" in
     *pyweb*) echo "web-api"; return ;;
     *docker*node*|*docker*python*|*docker*go*|*docker*ruby*) echo "web-api"; return ;;
     *node*) echo "web-api"; return ;;
-  esac
-
-  # Desktop app
-  case "$signals" in
-    *pydesktop*|*electrondesktop*) echo "desktop-app"; return ;;
   esac
 
   echo ""

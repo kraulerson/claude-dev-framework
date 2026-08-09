@@ -231,6 +231,10 @@ RESTOREMD
   cat > "$BACKUP_DIR/restore.sh" << RESTORESH
 #!/usr/bin/env bash
 set -euo pipefail
+if [ ! -t 0 ]; then
+  echo "ERROR: restore.sh is interactive (it confirms before removing .claude/framework/). Re-run from a terminal." >&2
+  exit 1
+fi
 echo "Restoring from backup: $BACKUP_DIR"
 read -rp "This will remove .claude/framework/ and .claude/project/. Continue? (y/n): " confirm
 [ "\$confirm" != "y" ] && exit 0
