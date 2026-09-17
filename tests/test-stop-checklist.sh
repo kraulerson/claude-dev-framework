@@ -188,6 +188,7 @@ test_planning_advisory_names_the_script() {
   assert_contains "$RESULT" "mark-plan-closed.sh" "advisory should name the script to run"
   CONTEXT=$(echo "$RESULT" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null || echo "")
   assert_contains "$CONTEXT" 'then run: bash .claude/framework/hooks/mark-plan-closed.sh "one-line summary"' "advisory should render a runnable command"
+  assert_contains "$CONTEXT" 'one-line summary" (plain text, no shell punctuation)' "advisory should say the summary is plain text"
   teardown_test_project
 }
 

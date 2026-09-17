@@ -371,6 +371,76 @@ test_blocks_mark_plan_closed_redirect() {
   teardown_test_project
 }
 
+# --- Chain arm, one separator each: the lone-prefixed form followed by a
+# separator must fall through to the framework-path check, never unlock.
+# The tails use tee, which only the framework-path check stops; an rm tail
+# would be caught by the earlier destructive-command check instead. ---
+test_blocks_mark_plan_closed_semicolon() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh s ; tee .claude/settings.json"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "semicolon after mark-plan-closed.sh must not unlock the guard"
+  teardown_test_project
+}
+
+test_blocks_mark_plan_closed_ampersand() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh s & tee .claude/settings.json"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "ampersand after mark-plan-closed.sh must not unlock the guard"
+  teardown_test_project
+}
+
+test_blocks_mark_plan_closed_pipe() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh s | tee .claude/settings.json"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "pipe after mark-plan-closed.sh must not unlock the guard"
+  teardown_test_project
+}
+
+test_blocks_mark_plan_closed_backtick() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh `tee .claude/settings.json`"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "backticks in the summary must not unlock the guard"
+  teardown_test_project
+}
+
+test_blocks_mark_plan_closed_stdin_redirect() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh s < .claude/settings.json"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "stdin redirect after mark-plan-closed.sh must not unlock the guard"
+  teardown_test_project
+}
+
+test_blocks_mark_plan_closed_newline() {
+  setup_test_project
+  # The JSON \n decodes to a real newline in the command string.
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh s\ntee .claude/settings.json"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "newline after mark-plan-closed.sh must not unlock the guard"
+  teardown_test_project
+}
+
+test_blocks_mark_plan_closed_substitution() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh \"$(tee .claude/settings.json)\""}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "substitution inside the summary must not unlock the guard"
+  teardown_test_project
+}
+
+# --- Test: a name that merely starts with the script name does not unlock ---
+test_blocks_mark_plan_closed_name_tail() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh.bak s"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "mark-plan-closed.sh.bak must not unlock the guard"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "config-guard.sh"
 test_blocks_write_settings
@@ -411,4 +481,12 @@ test_allows_mark_plan_closed_note
 test_blocks_mark_plan_closed_injection
 test_blocks_mark_plan_closed_mention
 test_blocks_mark_plan_closed_redirect
+test_blocks_mark_plan_closed_semicolon
+test_blocks_mark_plan_closed_ampersand
+test_blocks_mark_plan_closed_pipe
+test_blocks_mark_plan_closed_backtick
+test_blocks_mark_plan_closed_stdin_redirect
+test_blocks_mark_plan_closed_newline
+test_blocks_mark_plan_closed_substitution
+test_blocks_mark_plan_closed_name_tail
 run_tests

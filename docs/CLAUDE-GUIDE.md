@@ -50,8 +50,8 @@ Markers are temporary files in `/tmp/` that track workflow completion. They are 
 
 | Marker | Created when | Cleared when | Checked by |
 |--------|-------------|--------------|------------|
-| `.claude_evaluated_{hash}` | You present an evaluation and get user approval, then run `touch` | After successful `git commit` | `enforce-evaluate.sh` |
-| `.claude_superpowers_{hash}` | You invoke a Superpowers skill, then run `touch` | After successful `git commit` | `enforce-superpowers.sh` |
+| `.claude_evaluated_{hash}` | You present an evaluation and get user approval, then run `mark-evaluated.sh` with a reason | After successful `git commit` | `enforce-evaluate.sh` |
+| `.claude_superpowers_{hash}` | You invoke a Superpowers skill (`marker-tracker.sh` creates it, automatic) | After successful `git commit` | `enforce-superpowers.sh` |
 | `.claude_session_start_{hash}` | Session starts (automatic) | Session ends | `stop-checklist.sh` |
 | `.claude_changelog_synced_{hash}` | Sync script succeeds (automatic) | Not auto-cleared | `changelog-sync-check.sh` |
 | `.claude_plan_closed_{hash}` | You document plan closure, then run `mark-plan-closed.sh` with a one-line summary or `--note <path>` | Fresh session start (startup/clear) or session end; kept across resume and compact | `stop-checklist.sh` |
@@ -65,7 +65,7 @@ When you receive an advisory (additionalContext), you should:
 1. **Acknowledge it** — don't ignore the reminder
 2. **Follow the workflow** — present an evaluation, invoke Superpowers, etc.
 3. **Get user approval** — the user confirms or says "skip"
-4. **Create the marker** — run the `touch` command to record completion
+4. **Record completion** — the framework creates the marker when the skill is invoked; for an approved evaluation run `mark-evaluated.sh`, for documented plan closure run `mark-plan-closed.sh` (never `touch`)
 5. **Proceed** — you can now write source files or commit
 
 If the user says "skip evaluation" or "skip superpowers", create the marker anyway — the user has made a deliberate choice.

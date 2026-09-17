@@ -107,7 +107,7 @@ The `--prepopulate` flag accepts a JSON file with the same structure as the disc
 | **pre-commit-checks** | Verification | Blocking | Blocks commits missing version bumps or changelog updates |
 | **verification-gate** | Verification | Blocking | Runs configurable pre-commit quality gates (linter, type-check, visual auditor) |
 | **branch-safety** | Verification | Blocking | Blocks pushes to protected branches |
-| **stop-checklist** | — | Blocking | Blocks session end with uncommitted work, untested bug fixes, or missing plan closure |
+| **stop-checklist** | — | Blocking | Blocks session end with uncommitted work or untested bug fixes; advises on plan closure and session handoff |
 | **marker-guard** | — | Blocking | Prevents manual creation of workflow markers via touch commands |
 | **config-guard** | — | Blocking | Protects framework config, hooks, and markers from modification |
 | **marker-tracker** | — | Passive | Unified PostToolUse marker management: skill/plan/context7/sync tracking |

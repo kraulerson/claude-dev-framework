@@ -303,6 +303,77 @@ test_blocks_mark_plan_closed_substitution() {
   teardown_test_project
 }
 
+# --- Chain arm, one separator each: the lone-prefixed form followed by a
+# separator must fall through to the marker check, never unlock the guard ---
+test_blocks_mark_plan_closed_semicolon() {
+  setup_test_project
+  INPUT='{"tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh s ; touch /tmp/.claude_plan_closed_x"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "semicolon after mark-plan-closed.sh must not unlock the guard"
+  teardown_test_project
+}
+
+test_blocks_mark_plan_closed_ampersand() {
+  setup_test_project
+  INPUT='{"tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh s & touch /tmp/.claude_plan_closed_x"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "ampersand after mark-plan-closed.sh must not unlock the guard"
+  teardown_test_project
+}
+
+test_blocks_mark_plan_closed_pipe() {
+  setup_test_project
+  INPUT='{"tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh s | tee /tmp/.claude_plan_closed_x"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "pipe after mark-plan-closed.sh must not unlock the guard"
+  teardown_test_project
+}
+
+test_blocks_mark_plan_closed_backtick() {
+  setup_test_project
+  INPUT='{"tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh `touch /tmp/.claude_plan_closed_x`"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "backticks in the summary must not unlock the guard"
+  teardown_test_project
+}
+
+test_blocks_mark_plan_closed_stdin_redirect() {
+  setup_test_project
+  INPUT='{"tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh s < /tmp/.claude_plan_closed_x"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "stdin redirect after mark-plan-closed.sh must not unlock the guard"
+  teardown_test_project
+}
+
+test_blocks_mark_plan_closed_newline() {
+  setup_test_project
+  # The JSON \n decodes to a real newline in the command string.
+  INPUT='{"tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh s\ntouch /tmp/.claude_plan_closed_x"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "newline after mark-plan-closed.sh must not unlock the guard"
+  teardown_test_project
+}
+
+# --- Test: a name that merely starts with the script name does not unlock ---
+test_blocks_mark_plan_closed_name_tail() {
+  setup_test_project
+  INPUT='{"tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh.bak /tmp/.claude_plan_closed_x"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "mark-plan-closed.sh.bak must not unlock the guard"
+  teardown_test_project
+}
+
+# --- Test: the block message points at the sanctioned scripts ---
+test_block_message_names_scripts() {
+  setup_test_project
+  INPUT='{"tool_input":{"command":"touch /tmp/.claude_plan_closed_abc123"}}'
+  RESULT=$(run_hook "$HOOK" "$INPUT")
+  assert_contains "$RESULT" "mark-plan-closed.sh" "block message should name mark-plan-closed.sh"
+  assert_contains "$RESULT" "mark-evaluated.sh" "block message should name mark-evaluated.sh"
+  assert_not_contains "$RESULT" "created automatically" "block message must not claim every marker is automatic"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "marker-guard.sh (v4 markers)"
 test_blocks_plan_active
@@ -338,4 +409,12 @@ test_blocks_mark_plan_closed_injection
 test_blocks_mark_plan_closed_mention
 test_blocks_mark_plan_closed_redirect
 test_blocks_mark_plan_closed_substitution
+test_blocks_mark_plan_closed_semicolon
+test_blocks_mark_plan_closed_ampersand
+test_blocks_mark_plan_closed_pipe
+test_blocks_mark_plan_closed_backtick
+test_blocks_mark_plan_closed_stdin_redirect
+test_blocks_mark_plan_closed_newline
+test_blocks_mark_plan_closed_name_tail
+test_block_message_names_scripts
 run_tests

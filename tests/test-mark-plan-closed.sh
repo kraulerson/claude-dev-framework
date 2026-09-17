@@ -185,6 +185,69 @@ test_note_path_with_spaces() {
   teardown_test_project
 }
 
+# --- Test: a note path containing a newline is refused (the record is one line) ---
+test_note_path_with_newline_refused() {
+  setup_test_project
+  mkdir -p "$TEST_DIR/n"
+  local weird
+  weird="$(printf 'n/a\nb.md')"
+  echo "Closure: matched the plan." > "$TEST_DIR/$weird"
+  EXIT_CODE=$(run_script_exit_code --note "$weird")
+  assert_exit_code "1" "$EXIT_CODE" "note path with a newline should exit 1"
+  assert_file_not_exists "$(marker_path)" "note path with a newline must not create the marker"
+  teardown_test_project
+}
+
+# --- Test: a note whose name starts with a dash is read as a file, not an option ---
+test_note_path_starting_with_dash() {
+  setup_test_project
+  echo "Closure: matched the plan." > "$TEST_DIR/-dash.md"
+  EXIT_CODE=$(run_script_exit_code --note -dash.md)
+  assert_exit_code "0" "$EXIT_CODE" "note named with a leading dash should exit 0"
+  assert_file_exists "$(marker_path)" "note named with a leading dash should create the marker"
+  teardown_test_project
+}
+
+# --- Test: the record starts with a timestamp ---
+test_marker_record_has_timestamp() {
+  setup_test_project
+  run_script "planned vs actual matched" >/dev/null
+  STAMPED=$(grep -cE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} \| planned vs actual matched$' "$(marker_path)" 2>/dev/null || echo 0)
+  assert_equals "1" "$STAMPED" "marker record should be 'timestamp | summary'"
+  teardown_test_project
+}
+
+# --- Test: a note is recorded with its label ---
+test_marker_records_note_label() {
+  setup_test_project
+  echo "Closure: matched the plan." > "$TEST_DIR/closure.md"
+  run_script --note closure.md >/dev/null
+  LABELLED=$(grep -cF "| note: closure.md" "$(marker_path)" 2>/dev/null || echo 0)
+  assert_equals "1" "$LABELLED" "marker record should carry the note: label and path"
+  teardown_test_project
+}
+
+# --- Test: a refusal goes to stderr, with nothing on stdout ---
+test_refusal_goes_to_stderr() {
+  setup_test_project
+  STDOUT=$(cd "$TEST_DIR" && bash "$SCRIPT" "" 2>/dev/null)
+  STDERR=$(cd "$TEST_DIR" && bash "$SCRIPT" "" 2>&1 >/dev/null)
+  assert_equals "" "$STDOUT" "refusal should print nothing on stdout"
+  assert_contains "$STDERR" "ERROR: The closure summary is empty" "refusal should be on stderr"
+  teardown_test_project
+}
+
+# --- Test: printf directives and backslashes in the summary are recorded verbatim ---
+test_summary_printf_directives_verbatim() {
+  setup_test_project
+  local summary='done 100%s of %d items \n end'
+  RESULT=$(run_script "$summary")
+  RECORDED=$(grep -cF "| $summary" "$(marker_path)" 2>/dev/null || echo 0)
+  assert_equals "1" "$RECORDED" "percent directives and backslashes should be recorded verbatim"
+  assert_contains "$RESULT" '100%s of %d items' "confirmation should echo directives literally"
+  teardown_test_project
+}
+
 # --- Test: quotes, dollar signs and backticks in the summary are inert ---
 test_summary_metacharacters_inert() {
   setup_test_project
@@ -235,6 +298,12 @@ test_note_directory_refused
 test_note_without_path_refused
 test_note_extra_arguments_refused
 test_note_path_with_spaces
+test_note_path_starting_with_dash
+test_note_path_with_newline_refused
+test_marker_record_has_timestamp
+test_marker_records_note_label
+test_refusal_goes_to_stderr
+test_summary_printf_directives_verbatim
 test_summary_metacharacters_inert
 test_marker_uses_project_hash
 run_tests

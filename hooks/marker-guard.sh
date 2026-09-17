@@ -7,7 +7,7 @@ source "$SCRIPT_DIR/_helpers.sh" 2>/dev/null || exit 1
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null || echo "")
 
-BLOCK_MSG="BLOCKED — Manual marker manipulation is not permitted. Markers are created automatically by the framework when you complete the required workflow. Invoke the appropriate Superpowers skill or present an evaluation to proceed."
+BLOCK_MSG="BLOCKED — Manual marker manipulation is not permitted. Workflow markers are created by the framework when you complete the required workflow, or by the sanctioned scripts mark-evaluated.sh (after user approval of an evaluation) and mark-plan-closed.sh (after documenting plan closure). Invoke the appropriate Superpowers skill, or run the sanctioned script as a lone command, to proceed."
 
 # Normalize a path lexically (no disk access): collapse `//`, drop `/.` segments,
 # and resolve `/..` so non-canonical forms like `/tmp/./.claude_x`, `/tmp//.claude_x`,
