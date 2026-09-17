@@ -122,6 +122,55 @@ test_startup_writes_head_markers() {
   teardown_test_project
 }
 
+# The plan-closed marker follows the same lifecycle as the other workflow
+# markers. It is created through the sanctioned script so the precondition
+# (marker exists) proves the clear/preserve assertion is not vacuous.
+mark_plan_closed() {
+  (cd "$TEST_DIR" && bash "$HOOK_DIR/mark-plan-closed.sh" "closure documented" >/dev/null 2>&1) || true
+}
+
+# --- Test: startup clears the plan-closed marker ---
+test_startup_clears_plan_closed() {
+  setup_test_project
+  mark_plan_closed
+  assert_file_exists "/tmp/.claude_plan_closed_${TEST_HASH}" "precondition: marker exists before startup"
+  run_hook "$HOOK" '{"source":"startup"}' >/dev/null 2>&1
+  assert_file_not_exists "/tmp/.claude_plan_closed_${TEST_HASH}" "startup clears plan_closed"
+  rm -f "/tmp/.claude_last_head_${TEST_HASH}"
+  teardown_test_project
+}
+
+# --- Test: clear (a fresh source) clears the plan-closed marker ---
+test_clear_clears_plan_closed() {
+  setup_test_project
+  mark_plan_closed
+  assert_file_exists "/tmp/.claude_plan_closed_${TEST_HASH}" "precondition: marker exists before clear"
+  run_hook "$HOOK" '{"source":"clear"}' >/dev/null 2>&1
+  assert_file_not_exists "/tmp/.claude_plan_closed_${TEST_HASH}" "clear clears plan_closed"
+  rm -f "/tmp/.claude_last_head_${TEST_HASH}"
+  teardown_test_project
+}
+
+# --- Test: resume preserves the plan-closed marker ---
+test_resume_preserves_plan_closed() {
+  setup_test_project
+  mark_plan_closed
+  run_hook "$HOOK" '{"source":"resume"}' >/dev/null 2>&1
+  assert_file_exists "/tmp/.claude_plan_closed_${TEST_HASH}" "resume preserves plan_closed"
+  rm -f "/tmp/.claude_last_head_${TEST_HASH}"
+  teardown_test_project
+}
+
+# --- Test: compact preserves the plan-closed marker ---
+test_compact_preserves_plan_closed() {
+  setup_test_project
+  mark_plan_closed
+  run_hook "$HOOK" '{"source":"compact"}' >/dev/null 2>&1
+  assert_file_exists "/tmp/.claude_plan_closed_${TEST_HASH}" "compact preserves plan_closed"
+  rm -f "/tmp/.claude_last_head_${TEST_HASH}"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "session-start.sh (v4 rewrite)"
 test_has_directive
@@ -135,4 +184,8 @@ test_startup_clears_markers
 test_resume_preserves_markers
 test_compact_recovery_message
 test_startup_writes_head_markers
+test_startup_clears_plan_closed
+test_clear_clears_plan_closed
+test_resume_preserves_plan_closed
+test_compact_preserves_plan_closed
 run_tests

@@ -17,7 +17,14 @@ Save the closure summary to the context history file (configured in `manifest.js
 
 ### Marker
 
-The plan closure marker is created automatically by the framework when closure is documented. Do not create it manually.
+Once closure is documented, record it with the sanctioned script, run as a lone command from the project root:
+
+```
+bash .claude/framework/hooks/mark-plan-closed.sh "one-line closure summary"
+bash .claude/framework/hooks/mark-plan-closed.sh --note path/to/closure-note.md
+```
+
+The script refuses an empty summary and a note that is missing or empty, then creates the plan closure marker, which stops the end-of-session closure advisory for the rest of the session. It is the only way to create the marker: `touch`, redirects and file tools aimed at it are blocked by `marker-guard.sh`. If closure is skipped for one of the reasons below, say so in the summary.
 
 ### When to Skip
 

@@ -43,16 +43,16 @@ fi
 
 # Check if command references framework config or hook paths
 if echo "$COMMAND" | grep -qE '\.claude/(framework/hooks/|settings\.json|settings\.local\.json|manifest\.json)'; then
-  # Allow the sanctioned mark-evaluated.sh script — but only as a lone, unchained
-  # invocation. A command that merely CONTAINS the string (e.g. appended after
-  # `&&`) must not unlock the guard (R-11).
-  if [[ "$COMMAND" == *mark-evaluated.sh* ]]; then
+  # Allow the sanctioned mark-evaluated.sh and mark-plan-closed.sh scripts — but only
+  # as a lone, unchained invocation. A command that merely CONTAINS the string (e.g.
+  # appended after `&&`) must not unlock the guard (R-11).
+  if [[ "$COMMAND" == *mark-evaluated.sh* || "$COMMAND" == *mark-plan-closed.sh* ]]; then
     # Redirections (`>`, `>>`, `2>`, `<`) are as dangerous as chaining: a lone
     # `mark-evaluated.sh ... > .claude/settings.json` could truncate a protected
     # file, so treat `>`/`<` as fall-through-to-block too (R-11).
     if [[ "$COMMAND" =~ [\;\&\|\`\>\<] || "$COMMAND" == *'$('* || "$COMMAND" == *$'\n'* ]]; then
       : # chained/substituted/redirected — fall through to the blocking checks
-    elif [[ "$COMMAND" =~ ^[[:space:]]*(bash[[:space:]]+)?[^[:space:]]*mark-evaluated\.sh([[:space:]]|$) ]]; then
+    elif [[ "$COMMAND" =~ ^[[:space:]]*(bash[[:space:]]+)?[^[:space:]]*mark-(evaluated|plan-closed)\.sh([[:space:]]|$) ]]; then
       exit 0
     fi
   fi

@@ -123,7 +123,7 @@ if [ -n "$SESSION_START" ]; then
 
     # [Planning Zone] Plan closure: if Superpowers was used (commits exist) and no closure marker
     if [ ! -f "/tmp/.claude_plan_closed_${HASH}" ]; then
-      ADVISORIES="${ADVISORIES}[Planning Zone] If this session involved planned work, document plan closure: planned vs. actual, decisions made, issues deferred.\n\n"
+      ADVISORIES="${ADVISORIES}[Planning Zone] If this session involved planned work, document plan closure: planned vs. actual, decisions made, issues deferred; then run: bash .claude/framework/hooks/mark-plan-closed.sh \"one-line summary\"\n\n"
     fi
 
     # [Discovery Zone] Session handoff

@@ -326,6 +326,51 @@ test_blocks_mark_evaluated_redirect() {
   teardown_test_project
 }
 
+# --- Test: allows lone mark-plan-closed.sh (sanctioned script) ---
+test_allows_mark_plan_closed() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh \"planned vs actual matched\""}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "0" "$EXIT_CODE" "should allow mark-plan-closed.sh"
+  teardown_test_project
+}
+
+# --- Test: allows lone mark-plan-closed.sh in its --note form ---
+test_allows_mark_plan_closed_note() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh --note docs/closure.md"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "0" "$EXIT_CODE" "should allow mark-plan-closed.sh --note"
+  teardown_test_project
+}
+
+# --- Test: chained mark-plan-closed.sh does not unlock ---
+test_blocks_mark_plan_closed_injection() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"sed -i '"'"''"'"' .claude/manifest.json && echo mark-plan-closed.sh"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "chained mark-plan-closed.sh must not unlock the guard"
+  teardown_test_project
+}
+
+# --- Test: a command that merely mentions mark-plan-closed.sh does not unlock ---
+test_blocks_mark_plan_closed_mention() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"cp mark-plan-closed.sh .claude/framework/hooks/stop-checklist.sh"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "mentioning mark-plan-closed.sh as an argument must not unlock the guard"
+  teardown_test_project
+}
+
+# --- Test: lone mark-plan-closed.sh with a redirect must not unlock ---
+test_blocks_mark_plan_closed_redirect() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh summary > .claude/settings.json"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "redirect after mark-plan-closed.sh must not unlock the guard"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "config-guard.sh"
 test_blocks_write_settings
@@ -361,4 +406,9 @@ test_blocks_rm_claude_glob
 test_blocks_rm_claude_subdir
 test_blocks_mv_claude_slash
 test_blocks_mark_evaluated_redirect
+test_allows_mark_plan_closed
+test_allows_mark_plan_closed_note
+test_blocks_mark_plan_closed_injection
+test_blocks_mark_plan_closed_mention
+test_blocks_mark_plan_closed_redirect
 run_tests

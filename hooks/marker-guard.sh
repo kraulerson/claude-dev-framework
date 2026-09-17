@@ -52,15 +52,15 @@ fi
 
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || echo "")
 
-# Allow the sanctioned mark-evaluated.sh script — but only as a lone, unchained
-# invocation. A command that merely CONTAINS the string (e.g. appended after
-# `&&`) must not unlock the guard (R-11).
-if [[ "$COMMAND" == *mark-evaluated.sh* ]]; then
+# Allow the sanctioned mark-evaluated.sh and mark-plan-closed.sh scripts — but only
+# as a lone, unchained invocation. A command that merely CONTAINS the string (e.g.
+# appended after `&&`) must not unlock the guard (R-11).
+if [[ "$COMMAND" == *mark-evaluated.sh* || "$COMMAND" == *mark-plan-closed.sh* ]]; then
   # Redirections (`>`, `>>`, `2>`, `<`) can create/truncate a marker or the settings
   # file, so treat `>`/`<` as chaining and fall through to the blocking checks (R-11).
   if [[ "$COMMAND" =~ [\;\&\|\`\>\<] || "$COMMAND" == *'$('* || "$COMMAND" == *$'\n'* ]]; then
     : # chained/substituted/redirected — fall through to the blocking checks
-  elif [[ "$COMMAND" =~ ^[[:space:]]*(bash[[:space:]]+)?[^[:space:]]*mark-evaluated\.sh([[:space:]]|$) ]]; then
+  elif [[ "$COMMAND" =~ ^[[:space:]]*(bash[[:space:]]+)?[^[:space:]]*mark-(evaluated|plan-closed)\.sh([[:space:]]|$) ]]; then
     exit 0
   fi
 fi

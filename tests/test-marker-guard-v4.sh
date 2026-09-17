@@ -213,6 +213,96 @@ test_blocks_mark_evaluated_redirect() {
   teardown_test_project
 }
 
+# --- Test: direct creation of the plan-closed marker is still refused ---
+test_blocks_plan_closed_direct_create() {
+  setup_test_project
+  INPUT='{"tool_input":{"command":"touch /tmp/.claude_plan_closed_abc123"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "should block direct plan_closed marker creation"
+  teardown_test_project
+}
+
+# --- Test: direct deletion of the plan-closed marker is still refused ---
+test_blocks_plan_closed_direct_delete() {
+  setup_test_project
+  INPUT='{"tool_input":{"command":"rm -f /tmp/.claude_plan_closed_abc123"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "should block direct plan_closed marker deletion"
+  teardown_test_project
+}
+
+# --- Test: Write tool to the plan-closed marker is still refused ---
+test_blocks_write_to_plan_closed() {
+  setup_test_project
+  INPUT='{"tool_name":"Write","tool_input":{"file_path":"/tmp/.claude_plan_closed_abc123","content":"closed"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "should block Write to the plan_closed marker"
+  teardown_test_project
+}
+
+# --- Test (parity control): lone mark-evaluated.sh is allowed even when its reason names a marker ---
+test_allows_mark_evaluated_reason_naming_marker() {
+  setup_test_project
+  INPUT='{"tool_input":{"command":"bash .claude/framework/hooks/mark-evaluated.sh \"approved: clear /tmp/.claude_evaluated_x handling\""}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "0" "$EXIT_CODE" "lone mark-evaluated.sh is allowed whatever its reason says"
+  teardown_test_project
+}
+
+# --- Test: lone mark-plan-closed.sh is allowed exactly as mark-evaluated.sh is ---
+test_allows_lone_mark_plan_closed() {
+  setup_test_project
+  INPUT='{"tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh \"closed: /tmp/.claude_plan_closed_x lifecycle documented\""}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "0" "$EXIT_CODE" "lone mark-plan-closed.sh should be allowed whatever its summary says"
+  teardown_test_project
+}
+
+# --- Test: lone mark-plan-closed.sh --note form is allowed ---
+test_allows_lone_mark_plan_closed_note() {
+  setup_test_project
+  INPUT='{"tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh --note docs/.claude_plan_closed_notes.md"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "0" "$EXIT_CODE" "lone mark-plan-closed.sh --note should be allowed"
+  teardown_test_project
+}
+
+# --- Test: chained mark-plan-closed.sh does not unlock the guard ---
+test_blocks_mark_plan_closed_injection() {
+  setup_test_project
+  INPUT='{"tool_input":{"command":"touch /tmp/.claude_plan_closed_x && echo mark-plan-closed.sh"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "chained mark-plan-closed.sh must not unlock the guard"
+  teardown_test_project
+}
+
+# --- Test: a command that merely mentions mark-plan-closed.sh does not unlock the guard ---
+test_blocks_mark_plan_closed_mention() {
+  setup_test_project
+  INPUT='{"tool_input":{"command":"touch /tmp/.claude_plan_closed_x mark-plan-closed.sh"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "mentioning mark-plan-closed.sh as an argument must not unlock the guard"
+  teardown_test_project
+}
+
+# --- Test: lone mark-plan-closed.sh with a redirect to a marker is blocked ---
+test_blocks_mark_plan_closed_redirect() {
+  setup_test_project
+  INPUT='{"tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh summary 2>/tmp/.claude_plan_active_x"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "redirect after mark-plan-closed.sh must not unlock the guard"
+  teardown_test_project
+}
+
+# --- Test: command substitution in the summary does not unlock the guard ---
+test_blocks_mark_plan_closed_substitution() {
+  setup_test_project
+  INPUT='{"tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh \"$(touch /tmp/.claude_superpowers_x)\""}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "substitution inside the summary must not unlock the guard"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "marker-guard.sh (v4 markers)"
 test_blocks_plan_active
@@ -238,4 +328,14 @@ test_blocks_double_slash_write_marker
 test_blocks_dotdot_write_marker
 test_blocks_bare_marker_name_bash
 test_blocks_mark_evaluated_redirect
+test_blocks_plan_closed_direct_create
+test_blocks_plan_closed_direct_delete
+test_blocks_write_to_plan_closed
+test_allows_mark_evaluated_reason_naming_marker
+test_allows_lone_mark_plan_closed
+test_allows_lone_mark_plan_closed_note
+test_blocks_mark_plan_closed_injection
+test_blocks_mark_plan_closed_mention
+test_blocks_mark_plan_closed_redirect
+test_blocks_mark_plan_closed_substitution
 run_tests
