@@ -178,6 +178,7 @@ test_directive_names_sanctioned_scripts() {
   assert_contains "$RESULT" "mark-plan-closed.sh" "directive should name mark-plan-closed.sh"
   assert_contains "$RESULT" "mark-evaluated.sh" "directive should name mark-evaluated.sh"
   assert_not_contains "$RESULT" "Markers are created automatically" "directive must not claim every marker is automatic"
+  assert_contains "$RESULT" "never create one yourself" "directive should forbid creating a marker"
   rm -f "/tmp/.claude_last_head_${TEST_HASH}"
   teardown_test_project
 }

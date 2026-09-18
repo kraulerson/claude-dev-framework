@@ -354,6 +354,25 @@ test_blocks_mark_plan_closed_newline() {
   teardown_test_project
 }
 
+test_blocks_mark_plan_closed_unquoted_substitution() {
+  setup_test_project
+  INPUT='{"tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh $(touch /tmp/.claude_plan_closed_x)"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "unquoted substitution as the summary must not unlock the guard"
+  teardown_test_project
+}
+
+test_blocks_mark_plan_closed_glued_redirect() {
+  setup_test_project
+  INPUT='{"tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh s>/tmp/.claude_plan_closed_x"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "glued output redirect must not unlock the guard"
+  INPUT='{"tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh s</tmp/.claude_plan_closed_x"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "glued input redirect must not unlock the guard"
+  teardown_test_project
+}
+
 # --- Test: a name that merely starts with the script name does not unlock ---
 test_blocks_mark_plan_closed_name_tail() {
   setup_test_project
@@ -371,6 +390,7 @@ test_block_message_names_scripts() {
   assert_contains "$RESULT" "mark-plan-closed.sh" "block message should name mark-plan-closed.sh"
   assert_contains "$RESULT" "mark-evaluated.sh" "block message should name mark-evaluated.sh"
   assert_not_contains "$RESULT" "created automatically" "block message must not claim every marker is automatic"
+  assert_contains "$RESULT" "run the sanctioned script as a lone command" "block message should say how the script must be run"
   teardown_test_project
 }
 
@@ -415,6 +435,8 @@ test_blocks_mark_plan_closed_pipe
 test_blocks_mark_plan_closed_backtick
 test_blocks_mark_plan_closed_stdin_redirect
 test_blocks_mark_plan_closed_newline
+test_blocks_mark_plan_closed_unquoted_substitution
+test_blocks_mark_plan_closed_glued_redirect
 test_blocks_mark_plan_closed_name_tail
 test_block_message_names_scripts
 run_tests

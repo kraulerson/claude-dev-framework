@@ -26,4 +26,4 @@ Before writing any source files, you MUST:
 For projects with existing code, the first evaluation or planning session should include understanding the current architecture, file structure, patterns, and conventions. This can be done through Superpowers brainstorming or by reading key files before proposing changes.
 
 ### Marker
-The evaluation marker is created automatically by the framework when the workflow is completed. Do not create it manually.
+The evaluation marker is created by the sanctioned script once the user has approved the evaluation: run `bash .claude/framework/hooks/mark-evaluated.sh "brief description of what was approved"` as a lone command from the project root. Do not create it any other way; `marker-guard.sh` refuses `touch`, redirects and file tools aimed at it.

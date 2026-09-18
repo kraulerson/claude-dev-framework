@@ -18,7 +18,7 @@ if [[ "${1:-}" = "--note" ]]; then
   NOTE="$2"
   [[ "$NOTE" != *$'\n'* ]] || fail "The closure note path must be one line."
   [ -f "$NOTE" ] || fail "Closure note not found: ${NOTE}."
-  grep -q -- '[^[:space:]]' "$NOTE" || fail "Closure note is empty: ${NOTE}."
+  grep -q '[^[:space:]]' < "$NOTE" || fail "Closure note is empty: ${NOTE}."
   RECORD="note: ${NOTE}"
 else
   # Closure summary: exactly one non-blank, single-line argument

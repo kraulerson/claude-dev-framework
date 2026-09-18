@@ -432,6 +432,25 @@ test_blocks_mark_plan_closed_substitution() {
   teardown_test_project
 }
 
+test_blocks_mark_plan_closed_unquoted_substitution() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh $(tee .claude/settings.json)"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "unquoted substitution as the summary must not unlock the guard"
+  teardown_test_project
+}
+
+test_blocks_mark_plan_closed_glued_redirect() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh s>.claude/settings.json"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "glued output redirect must not unlock the guard"
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh s<.claude/settings.json"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "glued input redirect must not unlock the guard"
+  teardown_test_project
+}
+
 # --- Test: a name that merely starts with the script name does not unlock ---
 test_blocks_mark_plan_closed_name_tail() {
   setup_test_project
@@ -488,5 +507,7 @@ test_blocks_mark_plan_closed_backtick
 test_blocks_mark_plan_closed_stdin_redirect
 test_blocks_mark_plan_closed_newline
 test_blocks_mark_plan_closed_substitution
+test_blocks_mark_plan_closed_unquoted_substitution
+test_blocks_mark_plan_closed_glued_redirect
 test_blocks_mark_plan_closed_name_tail
 run_tests

@@ -185,6 +185,24 @@ test_note_path_with_spaces() {
   teardown_test_project
 }
 
+# --- Test: a note literally named "-" is read as a file, not as stdin ---
+test_note_named_dash_reads_file() {
+  setup_test_project
+  echo "Closure: matched the plan." > "$TEST_DIR/-"
+  EXIT_CODE=$(cd "$TEST_DIR" && bash "$SCRIPT" --note - </dev/null >/dev/null 2>&1; echo $?)
+  assert_exit_code "0" "$EXIT_CODE" "note named - should exit 0 with stdin closed"
+  assert_file_exists "$(marker_path)" "note named - should create the marker"
+  teardown_test_project
+}
+
+# --- Test: the usage text says the summary is plain text ---
+test_usage_says_plain_text() {
+  setup_test_project
+  RESULT=$(run_script)
+  assert_contains "$RESULT" "(plain text, no shell punctuation)" "usage should say the summary is plain text"
+  teardown_test_project
+}
+
 # --- Test: a note path containing a newline is refused (the record is one line) ---
 test_note_path_with_newline_refused() {
   setup_test_project
@@ -299,6 +317,8 @@ test_note_without_path_refused
 test_note_extra_arguments_refused
 test_note_path_with_spaces
 test_note_path_starting_with_dash
+test_note_named_dash_reads_file
+test_usage_says_plain_text
 test_note_path_with_newline_refused
 test_marker_record_has_timestamp
 test_marker_records_note_label
