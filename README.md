@@ -4,7 +4,7 @@ A universal development discipline enforcement system for [Claude Code](https://
 
 This framework fixes that — but getting here required solving a deeper problem first. Claude has an internal priority stack: **speed → user satisfaction → compliance**. It classifies tasks as "trivial" or "complex" *before* checking rules, then rationalizes past any rule it considers unnecessary for "trivial" tasks. Early versions of this framework used advisory hooks (context injection), which Claude ignored. We then switched to blocking hooks (exit 2), which Claude bypassed by forging workflow markers. We removed the marker commands from messages, and Claude found them in rule files. We blocked the touch commands, and Claude presented text evaluations as substitutes for the required brainstorming skill.
 
-The current version (v4.3.1) organizes enforcement into **5 enforcement zones** (Discovery, Design, Planning, Implementation, Verification) built on a **10-layer defense-in-depth model** (inspired by the [Swiss cheese model](https://en.wikipedia.org/wiki/Swiss_cheese_model)). Each zone gates a workflow stage — from requiring Superpowers skills before editing, to enforcing plan-task tracking, to blocking code using unresearched libraries via [Context7](https://context7.com/) MCP, to running configurable pre-commit verification gates. The full analysis of Claude's behavioral model and how each layer targets a specific bypass pattern is documented in **[Compliance Engineering](docs/COMPLIANCE_ENGINEERING.md)**. If you're building enforcement for AI agents and hitting similar compliance failures, start there.
+The current version (v4.3.2) organizes enforcement into **5 enforcement zones** (Discovery, Design, Planning, Implementation, Verification) built on a **10-layer defense-in-depth model** (inspired by the [Swiss cheese model](https://en.wikipedia.org/wiki/Swiss_cheese_model)). Each zone gates a workflow stage — from requiring Superpowers skills before editing, to enforcing plan-task tracking, to blocking code using unresearched libraries via [Context7](https://context7.com/) MCP, to running configurable pre-commit verification gates. The full analysis of Claude's behavioral model and how each layer targets a specific bypass pattern is documented in **[Compliance Engineering](docs/COMPLIANCE_ENGINEERING.md)**. If you're building enforcement for AI agents and hitting similar compliance failures, start there.
 
 ## What Makes This Framework Different
 
@@ -92,6 +92,8 @@ bash ~/.claude-dev-framework/scripts/init.sh --skip-plugin-check --prepopulate .
 ```
 
 The `--prepopulate` flag accepts a JSON file with the same structure as the discovery interview output. The file must contain at least one `branch:*` key. If the file is missing, invalid, or lacks a branch key, init.sh falls back to the interactive interview with a warning.
+
+`init.sh --help` lists every option and changes nothing. An unrecognised option is refused before anything is written (exit 2) — init.sh installs into the current directory, so run it from your project root.
 
 ## Hooks
 
