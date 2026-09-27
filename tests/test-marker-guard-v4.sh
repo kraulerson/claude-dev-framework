@@ -405,16 +405,23 @@ test_blocks_expanding_first_word() {
     EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
     assert_exit_code "2" "$EXIT_CODE" "an \$IFS first word ending in $name must not unlock the guard"
     teardown_test_project
+    # Without `#`, so the only character outside the path allowlist is `$`.
+    setup_test_project
+    INPUT='{"tool_input":{"command":"touch$IFS/tmp/.claude_evaluated_abc123$IFS/dev/null$IFS'"$name"'"}}'
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+    assert_exit_code "2" "$EXIT_CODE" "a #-free \$IFS first word ending in $name must not unlock the guard"
+    teardown_test_project
   done
 }
 
 # --- Test: the absolute and ./ path forms still unlock (enforce-evaluate.sh
-# prints the absolute form) ---
+# prints the absolute form). Each names a marker, so only the allowance can pass it. ---
 test_allows_path_forms() {
   local cmd
-  for cmd in 'bash /Users/dev/my-proj/.claude/framework/hooks/mark-evaluated.sh \"approved: retries=3\"' \
-             'bash ./.claude/framework/hooks/mark-plan-closed.sh \"closed\"' \
-             '~/.claude-dev-framework/hooks/mark-evaluated.sh \"approved\"'; do
+  for cmd in 'bash /Users/dev/my-proj/.claude/framework/hooks/mark-evaluated.sh \"approved: retries=3 for /tmp/.claude_evaluated_x\"' \
+             'bash /Users/dev/my+proj@2,v1:x%y/.claude/framework/hooks/mark-evaluated.sh \"approved: /tmp/.claude_evaluated_x\"' \
+             'bash ./.claude/framework/hooks/mark-plan-closed.sh \"closed: /tmp/.claude_plan_closed_x\"' \
+             '~/.claude-dev-framework/hooks/mark-evaluated.sh \"approved: /tmp/.claude_evaluated_x\"'; do
     setup_test_project
     INPUT='{"tool_input":{"command":"'"$cmd"'"}}'
     EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")

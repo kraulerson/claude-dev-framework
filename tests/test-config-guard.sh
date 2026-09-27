@@ -347,6 +347,12 @@ test_blocks_expanding_first_word() {
     EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
     assert_exit_code "2" "$EXIT_CODE" "an \$IFS first word ending in $name must not unlock the guard"
     teardown_test_project
+    # Without `#`, so the only character outside the path allowlist is `$`.
+    setup_test_project
+    INPUT='{"tool_name":"Bash","tool_input":{"command":"cp$IFS/tmp/evil.sh$IFS.claude/framework/hooks/enforce-evaluate.sh$IFS/dev/null$IFS'"$name"'"}}'
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+    assert_exit_code "2" "$EXIT_CODE" "a #-free \$IFS first word ending in $name must not unlock the guard"
+    teardown_test_project
   done
 }
 
@@ -355,6 +361,7 @@ test_blocks_expanding_first_word() {
 test_allows_path_forms() {
   local cmd
   for cmd in 'bash /Users/dev/my-proj/.claude/framework/hooks/mark-evaluated.sh \"approved: retries=3\"' \
+             'bash /Users/dev/my+proj@2,v1:x%y/.claude/framework/hooks/mark-evaluated.sh \"approved\"' \
              'bash ./.claude/framework/hooks/mark-plan-closed.sh \"closed\"'; do
     setup_test_project
     INPUT='{"tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
