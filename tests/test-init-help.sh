@@ -74,6 +74,11 @@ test_value_required() {
     assert_exit_code "2" "$rc" "$flag followed by an option is a missing value"
     assert_equals "$BEFORE" "$(tree_now)" "$flag --help writes nothing"
     teardown
+    setup
+    out=$(run_init --skip-plugin-check "$flag" ""); rc=$?
+    assert_exit_code "2" "$rc" "$flag with an empty value is a missing value"
+    assert_equals "$BEFORE" "$(tree_now)" "$flag \"\" writes nothing"
+    teardown
   done
 }
 test_unknown_profile_refused() {
@@ -87,6 +92,19 @@ test_unknown_profile_refused() {
   setup
   out=$(run_init --skip-plugin-check --profile _base); rc=$?
   assert_exit_code "2" "$rc" "the internal _base profile is not selectable"
+  teardown
+}
+# The profile is checked where the install reads it ($HOME/.claude-dev-framework),
+# not beside whichever init.sh was run: a profile present in one checkout but
+# absent from the clone used to pass the check and start the install.
+test_profile_checked_against_clone() {
+  setup
+  rm "$CLONE/profiles/web-api.yml"
+  BEFORE=$(tree_now)
+  local out rc; out=$(cd "$PROJ" && HOME="$FAKE_HOME" bash "$REPO/scripts/init.sh" --skip-plugin-check --profile web-api </dev/null 2>&1); rc=$?
+  assert_exit_code "2" "$rc" "a profile missing from the clone exits 2"
+  assert_contains "$out" "unknown profile: web-api" "the refusal names the profile"
+  assert_equals "$BEFORE" "$(tree_now)" "a profile missing from the clone writes nothing"
   teardown
 }
 test_known_flags_still_install() {
@@ -104,5 +122,6 @@ test_help_after_other_flags
 test_unknown_flag_refused
 test_value_required
 test_unknown_profile_refused
+test_profile_checked_against_clone
 test_known_flags_still_install
 run_tests

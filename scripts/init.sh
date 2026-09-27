@@ -35,9 +35,9 @@ while [ $# -gt 0 ]; do
     --archive) ARCHIVE=true ;;
     --skip-plugin-check) SKIP_PLUGINS=true ;;
     --prepopulate|--profile)
-      # A value is required, and one that looks like an option is a missing
-      # value (`--prepopulate --help` used to install with an empty file).
-      if [ $# -lt 2 ] || [ "${2#-}" != "$2" ]; then
+      # A value is required; an empty one, or one that looks like an option, is
+      # a missing value (`--prepopulate --help` used to install with an empty file).
+      if [ $# -lt 2 ] || [ -z "$2" ] || [ "${2#-}" != "$2" ]; then
         echo "ERROR: $1 needs a value (nothing was changed)" >&2; usage >&2; exit 2
       fi
       [ "$1" = --profile ] && PROFILE_ARG="$2" || PREPOPULATE_FILE="$2"
@@ -46,13 +46,6 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-# An unknown profile used to fail only after the install had started writing.
-if [ -n "$PROFILE_ARG" ] && { [ "${PROFILE_ARG#_}" != "$PROFILE_ARG" ] || [ ! -f "$SCRIPT_DIR/../profiles/$PROFILE_ARG.yml" ]; }; then
-  echo "ERROR: unknown profile: $PROFILE_ARG (nothing was changed)" >&2
-  echo "Profiles: $(cd "$SCRIPT_DIR/../profiles" && ls *.yml | sed -n 's/\.yml$//p' | grep -v '^_' | tr '\n' ' ')" >&2
-  exit 2
-fi
-
 # ---- Safety Checks ----
 if ! git rev-parse --git-dir &>/dev/null; then
   echo "ERROR: Not inside a git repository. Run this from your project root." >&2; exit 1
@@ -62,6 +55,14 @@ if [ ! -d "$FRAMEWORK_CLONE/.git" ]; then
   echo "ERROR: Framework not found at $FRAMEWORK_CLONE" >&2
   echo "Clone it first: git clone https://github.com/kraulerson/claude-dev-framework.git ~/.claude-dev-framework" >&2
   exit 1
+fi
+
+# An unknown profile used to fail only after the install had started writing.
+# Checked against the clone, which is where the install reads profiles from.
+if [ -n "$PROFILE_ARG" ] && { [ "${PROFILE_ARG#_}" != "$PROFILE_ARG" ] || [ ! -f "$FRAMEWORK_CLONE/profiles/$PROFILE_ARG.yml" ]; }; then
+  echo "ERROR: unknown profile: $PROFILE_ARG (nothing was changed)" >&2
+  echo "Profiles: $(cd "$FRAMEWORK_CLONE/profiles" && ls *.yml | sed -n 's/\.yml$//p' | grep -v '^_' | tr '\n' ' ')" >&2
+  exit 2
 fi
 
 PROJ_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
