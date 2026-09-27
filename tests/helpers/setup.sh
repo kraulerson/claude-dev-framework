@@ -6,7 +6,7 @@ HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/hooks"
 # Create a temporary git repo with a basic manifest for testing
 setup_test_project() {
   TEST_DIR=$(mktemp -d)
-  mkdir -p "$TEST_DIR/.claude"
+  mkdir -p "$TEST_DIR/.claude/framework/hooks"
 
   # Initialize git repo with an initial commit
   git -C "$TEST_DIR" init --quiet
