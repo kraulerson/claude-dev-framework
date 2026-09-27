@@ -395,6 +395,34 @@ test_blocks_assignment_prefix() {
   done
 }
 
+# --- Test: a first word that expands at run time does not unlock (`$IFS` becomes
+# whitespace, so `touch$IFS<marker>$IFS#mark-evaluated.sh` runs touch) ---
+test_blocks_expanding_first_word() {
+  local name
+  for name in mark-evaluated.sh mark-plan-closed.sh; do
+    setup_test_project
+    INPUT='{"tool_input":{"command":"touch$IFS/tmp/.claude_evaluated_abc123$IFS#'"$name"'"}}'
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+    assert_exit_code "2" "$EXIT_CODE" "an \$IFS first word ending in $name must not unlock the guard"
+    teardown_test_project
+  done
+}
+
+# --- Test: the absolute and ./ path forms still unlock (enforce-evaluate.sh
+# prints the absolute form) ---
+test_allows_path_forms() {
+  local cmd
+  for cmd in 'bash /Users/dev/my-proj/.claude/framework/hooks/mark-evaluated.sh \"approved: retries=3\"' \
+             'bash ./.claude/framework/hooks/mark-plan-closed.sh \"closed\"' \
+             '~/.claude-dev-framework/hooks/mark-evaluated.sh \"approved\"'; do
+    setup_test_project
+    INPUT='{"tool_input":{"command":"'"$cmd"'"}}'
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+    assert_exit_code "0" "$EXIT_CODE" "path form must still be allowed: $cmd"
+    teardown_test_project
+  done
+}
+
 # --- Test: only the two sanctioned names unlock, not any mark-*.sh (a sanctioned
 # name later in the line reaches the allowance, which must still refuse) ---
 test_blocks_other_mark_script() {
@@ -462,6 +490,8 @@ test_blocks_mark_plan_closed_unquoted_substitution
 test_blocks_mark_plan_closed_glued_redirect
 test_blocks_mark_plan_closed_name_tail
 test_blocks_assignment_prefix
+test_blocks_expanding_first_word
+test_allows_path_forms
 test_blocks_other_mark_script
 test_block_message_names_scripts
 run_tests

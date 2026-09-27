@@ -47,14 +47,15 @@ if echo "$COMMAND" | grep -qE '\.claude/(framework/hooks/|settings\.json|setting
   # as a lone, unchained invocation. A command that merely CONTAINS the string (e.g.
   # appended after `&&`) must not unlock the guard (R-11).
   if [[ "$COMMAND" == *mark-evaluated.sh* || "$COMMAND" == *mark-plan-closed.sh* ]]; then
-    # The first word may not contain `=`: `x=mark-evaluated.sh touch ...` is a
-    # variable assignment followed by an arbitrary command.
+    # The first word is a plain path (letters, digits, _ . / ~ -) and nothing else:
+    # `x=mark-evaluated.sh touch ...` is an assignment and `touch$IFS<marker>$IFS#mark-...`
+    # splits at run time, and either would run an arbitrary command.
     # Redirections (`>`, `>>`, `2>`, `<`) are as dangerous as chaining: a lone
     # `mark-evaluated.sh ... > .claude/settings.json` could truncate a protected
     # file, so treat `>`/`<` as fall-through-to-block too (R-11).
     if [[ "$COMMAND" =~ [\;\&\|\`\>\<] || "$COMMAND" == *'$('* || "$COMMAND" == *$'\n'* ]]; then
       : # chained/substituted/redirected — fall through to the blocking checks
-    elif [[ "$COMMAND" =~ ^[[:space:]]*(bash[[:space:]]+)?[^[:space:]=]*mark-(evaluated|plan-closed)\.sh([[:space:]]|$) ]]; then
+    elif [[ "$COMMAND" =~ ^[[:space:]]*(bash[[:space:]]+)?[[:alnum:]_./~-]*mark-(evaluated|plan-closed)\.sh([[:space:]]|$) ]]; then
       exit 0
     fi
   fi

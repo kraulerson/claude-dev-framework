@@ -94,14 +94,14 @@
 - **Event:** PreToolUse (Bash|Write|Edit|NotebookEdit)
 - **Blocking:** Yes (exit 2)
 - **Purpose:** Blocks any attempt to create or tamper with framework marker/state paths. Bash commands referencing a marker path (`superpowers`, `evaluated`, `plan_closed`, `plan_active`, `has_plan`, `skill_active`, `c7`, `c7_degraded`, `changelog_synced`, `session_start`, `last_head`, `stop_errors_hash`, `eval_log`) are blocked regardless of creation method (touch, echo redirect, cp, tee, dd, python, etc.). Write/Edit/NotebookEdit whose target path is under `/tmp/.claude_*` or `/private/tmp/.claude_*` is also blocked (R-07). Prevents Claude from forging markers or altering framework state (e.g. `last_head` to suppress post-commit resets, `session_start` to skew the stop audit, `stop_errors_hash` to silence stop blocks) to bypass enforcement.
-- **Allowed:** `mark-evaluated.sh` and `mark-plan-closed.sh` — but only as a lone, unchained invocation. A command that merely contains the string (e.g. appended after `&&`, `;`, `|`, backticks, or `$(...)`) does not unlock the guard.
+- **Allowed:** `mark-evaluated.sh` and `mark-plan-closed.sh` — but only as a lone, unchained invocation whose script path is plain (letters, digits, `_ . / ~ -`; no `=` or `$`). A command that merely contains the string (e.g. appended after `&&`, `;`, `|`, backticks, or `$(...)`) does not unlock the guard.
 - **Disable:** Remove `marker-guard` from `manifest.json → activeHooks`
 
 ## config-guard.sh
 - **Event:** PreToolUse (Bash|Write|Edit)
 - **Blocking:** Yes (exit 2)
 - **Purpose:** Protects framework infrastructure from modification. Blocks: (1) Write/Edit on `.claude/settings.json`, `.claude/settings.local.json`, `.claude/manifest.json`, and any `.claude/framework/*` path; (2) Bash commands that modify framework config or hook files (sed, rm, chmod, echo redirect, etc.); (3) `CLAUDE_PROJECT_DIR=` environment variable assignments.
-- **Allowed:** Read-only Bash commands (cat/head/tail/grep/etc.) on framework files; the `mark-evaluated.sh` and `mark-plan-closed.sh` script paths (lone, unchained invocation only)
+- **Allowed:** Read-only Bash commands (cat/head/tail/grep/etc.) on framework files; the `mark-evaluated.sh` and `mark-plan-closed.sh` script paths (lone, unchained invocation with a plain script path only)
 - **Disable:** Remove `config-guard` from `manifest.json → activeHooks`
 
 ## session-end.sh
