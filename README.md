@@ -93,6 +93,8 @@ bash ~/.claude-dev-framework/scripts/init.sh --skip-plugin-check --prepopulate .
 
 The `--prepopulate` flag accepts a JSON file with the same structure as the discovery interview output. The file must contain at least one `branch:*` key. If the file is missing, invalid, or lacks a branch key, init.sh falls back to the interactive interview with a warning.
 
+`init.sh --help` lists every option and changes nothing. An unrecognised option is refused before anything is written (exit 2) — init.sh installs into the current directory, so run it from your project root.
+
 ## Hooks
 
 **17 hooks** enforce rules mechanically via Claude Code's hook API:
