@@ -2,6 +2,7 @@
 # test-prepopulate.sh — Tests for --prepopulate flag in init.sh
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/helpers/assert.sh"
+source "$SCRIPT_DIR/helpers/setup.sh"   # HOME -> a copy of this tree, not the live install (#12)
 
 INIT_SCRIPT="$(cd "$SCRIPT_DIR/.." && pwd)/scripts/init.sh"
 

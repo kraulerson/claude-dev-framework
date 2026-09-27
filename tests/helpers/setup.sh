@@ -3,6 +3,20 @@
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/hooks"
 
+# Tests run against this checkout, never the operator's live install (#12): HOME is a
+# throwaway directory whose .claude-dev-framework is a copy of the tree under test, so
+# init.sh reads this tree's assets and session-start.sh's `git fetch` there has no
+# remote to reach. A copy rather than a link, so nothing a test runs can write to the
+# checkout or fetch in its repository.
+TEST_LAB_HOME=$(mktemp -d)
+mkdir -p "$TEST_LAB_HOME/.claude-dev-framework"
+cp -R "$HOOK_DIR/../hooks" "$HOOK_DIR/../rules" "$HOOK_DIR/../gates" "$HOOK_DIR/../profiles" \
+      "$HOOK_DIR/../scripts" "$HOOK_DIR/../migrations" "$HOOK_DIR/../FRAMEWORK_VERSION" \
+      "$TEST_LAB_HOME/.claude-dev-framework/"
+git init --quiet "$TEST_LAB_HOME/.claude-dev-framework"
+export HOME="$TEST_LAB_HOME"
+trap 'rm -rf "$TEST_LAB_HOME"' EXIT
+
 # Create a temporary git repo with a basic manifest for testing
 setup_test_project() {
   TEST_DIR=$(mktemp -d)
