@@ -382,6 +382,29 @@ test_blocks_mark_plan_closed_name_tail() {
   teardown_test_project
 }
 
+# --- Test: an assignment prefix naming a script does not unlock (a first word
+# `x=mark-evaluated.sh` is a variable assignment, and the rest runs) ---
+test_blocks_assignment_prefix() {
+  local name
+  for name in mark-evaluated.sh mark-plan-closed.sh; do
+    setup_test_project
+    INPUT='{"tool_input":{"command":"x='"$name"' touch /tmp/.claude_evaluated_abc123"}}'
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+    assert_exit_code "2" "$EXIT_CODE" "x=$name prefix must not unlock the guard"
+    teardown_test_project
+  done
+}
+
+# --- Test: only the two sanctioned names unlock, not any mark-*.sh (a sanctioned
+# name later in the line reaches the allowance, which must still refuse) ---
+test_blocks_other_mark_script() {
+  setup_test_project
+  INPUT='{"tool_input":{"command":"bash .claude/framework/hooks/mark-other.sh mark-evaluated.sh /tmp/.claude_evaluated_abc123"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "an unsanctioned mark-*.sh must not unlock the guard"
+  teardown_test_project
+}
+
 # --- Test: the block message points at the sanctioned scripts ---
 test_block_message_names_scripts() {
   setup_test_project
@@ -438,5 +461,7 @@ test_blocks_mark_plan_closed_newline
 test_blocks_mark_plan_closed_unquoted_substitution
 test_blocks_mark_plan_closed_glued_redirect
 test_blocks_mark_plan_closed_name_tail
+test_blocks_assignment_prefix
+test_blocks_other_mark_script
 test_block_message_names_scripts
 run_tests

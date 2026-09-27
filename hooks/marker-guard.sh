@@ -56,11 +56,13 @@ COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || ec
 # as a lone, unchained invocation. A command that merely CONTAINS the string (e.g.
 # appended after `&&`) must not unlock the guard (R-11).
 if [[ "$COMMAND" == *mark-evaluated.sh* || "$COMMAND" == *mark-plan-closed.sh* ]]; then
+  # The first word may not contain `=`: `x=mark-evaluated.sh touch ...` is a
+  # variable assignment followed by an arbitrary command.
   # Redirections (`>`, `>>`, `2>`, `<`) can create/truncate a marker or the settings
   # file, so treat `>`/`<` as chaining and fall through to the blocking checks (R-11).
   if [[ "$COMMAND" =~ [\;\&\|\`\>\<] || "$COMMAND" == *'$('* || "$COMMAND" == *$'\n'* ]]; then
     : # chained/substituted/redirected — fall through to the blocking checks
-  elif [[ "$COMMAND" =~ ^[[:space:]]*(bash[[:space:]]+)?[^[:space:]]*mark-(evaluated|plan-closed)\.sh([[:space:]]|$) ]]; then
+  elif [[ "$COMMAND" =~ ^[[:space:]]*(bash[[:space:]]+)?[^[:space:]=]*mark-(evaluated|plan-closed)\.sh([[:space:]]|$) ]]; then
     exit 0
   fi
 fi
