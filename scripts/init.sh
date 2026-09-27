@@ -7,18 +7,45 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # ---- Flags ----
 MIGRATE=false; RECONFIGURE=false; ARCHIVE=false; SKIP_PLUGINS=false; PREPOPULATE_FILE=""; PROFILE_ARG=""
+usage() {
+  cat <<'USAGE'
+Usage: bash ~/.claude-dev-framework/scripts/init.sh [options]
+
+Installs or migrates the Development Guardrails into the git repository in the
+CURRENT DIRECTORY. Run it from your project root.
+
+Options:
+  --profile <name>        use this profile instead of detecting one
+  --prepopulate <file>    discovery answers as JSON (skips the interview)
+  --skip-plugin-check     do not check for Superpowers / Context7
+  --migrate               migrate an existing setup
+  --reconfigure           re-run the discovery interview
+  --archive               archive an existing setup
+  -h, --help              print this help and exit without changing anything
+USAGE
+}
+# Parse ALL flags before doing anything: --help and an unknown flag must exit
+# before the first write. An unknown flag used to be ignored silently, so a
+# typo or a `--help` ran a full install in whatever directory it was run from.
 while [ $# -gt 0 ]; do
   case "$1" in
+    -h|--help) usage; exit 0 ;;
     --migrate) MIGRATE=true ;;
     --reconfigure) RECONFIGURE=true ;;
     --archive) ARCHIVE=true ;;
     --skip-plugin-check) SKIP_PLUGINS=true ;;
-    --prepopulate) shift; PREPOPULATE_FILE="${1:-}" ;;
-    --profile) shift; PROFILE_ARG="${1:-}" ;;
+    --prepopulate|--profile)
+      # A value is required; an empty one, or one that looks like an option, is
+      # a missing value (`--prepopulate --help` used to install with an empty file).
+      if [ $# -lt 2 ] || [ -z "$2" ] || [ "${2#-}" != "$2" ]; then
+        echo "ERROR: $1 needs a value (nothing was changed)" >&2; usage >&2; exit 2
+      fi
+      [ "$1" = --profile ] && PROFILE_ARG="$2" || PREPOPULATE_FILE="$2"
+      shift ;;
+    *) echo "ERROR: unknown option: $1 (nothing was changed)" >&2; usage >&2; exit 2 ;;
   esac
   shift
 done
-
 # ---- Safety Checks ----
 if ! git rev-parse --git-dir &>/dev/null; then
   echo "ERROR: Not inside a git repository. Run this from your project root." >&2; exit 1
@@ -28,6 +55,14 @@ if [ ! -d "$FRAMEWORK_CLONE/.git" ]; then
   echo "ERROR: Framework not found at $FRAMEWORK_CLONE" >&2
   echo "Clone it first: git clone https://github.com/kraulerson/claude-dev-framework.git ~/.claude-dev-framework" >&2
   exit 1
+fi
+
+# An unknown profile used to fail only after the install had started writing.
+# Checked against the clone, which is where the install reads profiles from.
+if [ -n "$PROFILE_ARG" ] && { [ "${PROFILE_ARG#_}" != "$PROFILE_ARG" ] || [ ! -f "$FRAMEWORK_CLONE/profiles/$PROFILE_ARG.yml" ]; }; then
+  echo "ERROR: unknown profile: $PROFILE_ARG (nothing was changed)" >&2
+  echo "Profiles: $(cd "$FRAMEWORK_CLONE/profiles" && ls *.yml | sed -n 's/\.yml$//p' | grep -v '^_' | tr '\n' ' ')" >&2
+  exit 2
 fi
 
 PROJ_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
