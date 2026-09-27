@@ -7,7 +7,7 @@ source "$SCRIPT_DIR/_helpers.sh" 2>/dev/null || exit 1
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null || echo "")
 
-BLOCK_MSG="BLOCKED — Manual marker manipulation is not permitted. Markers are created automatically by the framework when you complete the required workflow. Invoke the appropriate Superpowers skill or present an evaluation to proceed."
+BLOCK_MSG="BLOCKED — Manual marker manipulation is not permitted. Workflow markers are created by the framework when you complete the required workflow, or by the sanctioned scripts mark-evaluated.sh (after user approval of an evaluation) and mark-plan-closed.sh (after documenting plan closure). Invoke the appropriate Superpowers skill, or run the sanctioned script as a lone command, to proceed."
 
 # Normalize a path lexically (no disk access): collapse `//`, drop `/.` segments,
 # and resolve `/..` so non-canonical forms like `/tmp/./.claude_x`, `/tmp//.claude_x`,
@@ -52,15 +52,18 @@ fi
 
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || echo "")
 
-# Allow the sanctioned mark-evaluated.sh script — but only as a lone, unchained
-# invocation. A command that merely CONTAINS the string (e.g. appended after
-# `&&`) must not unlock the guard (R-11).
-if [[ "$COMMAND" == *mark-evaluated.sh* ]]; then
+# Allow the sanctioned mark-evaluated.sh and mark-plan-closed.sh scripts — but only
+# as a lone, unchained invocation. A command that merely CONTAINS the string (e.g.
+# appended after `&&`) must not unlock the guard (R-11).
+if [[ "$COMMAND" == *mark-evaluated.sh* || "$COMMAND" == *mark-plan-closed.sh* ]]; then
+  # The first word is a plain path (letters, digits, _ . / ~ + @ , : % -) and nothing else:
+  # `x=mark-evaluated.sh touch ...` is an assignment and `touch$IFS<marker>$IFS#mark-...`
+  # splits at run time, and either would run an arbitrary command.
   # Redirections (`>`, `>>`, `2>`, `<`) can create/truncate a marker or the settings
   # file, so treat `>`/`<` as chaining and fall through to the blocking checks (R-11).
   if [[ "$COMMAND" =~ [\;\&\|\`\>\<] || "$COMMAND" == *'$('* || "$COMMAND" == *$'\n'* ]]; then
     : # chained/substituted/redirected — fall through to the blocking checks
-  elif [[ "$COMMAND" =~ ^[[:space:]]*(bash[[:space:]]+)?[^[:space:]]*mark-evaluated\.sh([[:space:]]|$) ]]; then
+  elif [[ "$COMMAND" =~ ^[[:space:]]*(bash[[:space:]]+)?[[:alnum:]_./~+@,:%-]*mark-(evaluated|plan-closed)\.sh([[:space:]]|$) ]]; then
     exit 0
   fi
 fi

@@ -326,6 +326,195 @@ test_blocks_mark_evaluated_redirect() {
   teardown_test_project
 }
 
+# --- Test: an assignment prefix naming a script does not unlock ---
+test_blocks_assignment_prefix() {
+  local name
+  for name in mark-evaluated.sh mark-plan-closed.sh; do
+    setup_test_project
+    INPUT='{"tool_name":"Bash","tool_input":{"command":"x='"$name"' cp /tmp/evil.sh .claude/framework/hooks/enforce-evaluate.sh"}}'
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+    assert_exit_code "2" "$EXIT_CODE" "x=$name prefix must not unlock the guard"
+    teardown_test_project
+  done
+}
+
+# --- Test: a first word that expands at run time does not unlock ---
+test_blocks_expanding_first_word() {
+  local name
+  for name in mark-evaluated.sh mark-plan-closed.sh; do
+    setup_test_project
+    INPUT='{"tool_name":"Bash","tool_input":{"command":"cp$IFS/tmp/evil.sh$IFS.claude/framework/hooks/enforce-evaluate.sh$IFS#'"$name"'"}}'
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+    assert_exit_code "2" "$EXIT_CODE" "an \$IFS first word ending in $name must not unlock the guard"
+    teardown_test_project
+    # Without `#`, so the only character outside the path allowlist is `$`.
+    setup_test_project
+    INPUT='{"tool_name":"Bash","tool_input":{"command":"cp$IFS/tmp/evil.sh$IFS.claude/framework/hooks/enforce-evaluate.sh$IFS/dev/null$IFS'"$name"'"}}'
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+    assert_exit_code "2" "$EXIT_CODE" "a #-free \$IFS first word ending in $name must not unlock the guard"
+    teardown_test_project
+  done
+}
+
+# --- Test: the absolute and ./ path forms still unlock (enforce-evaluate.sh
+# prints the absolute form) ---
+test_allows_path_forms() {
+  local cmd
+  for cmd in 'bash /Users/dev/my-proj/.claude/framework/hooks/mark-evaluated.sh \"approved: retries=3\"' \
+             'bash /Users/dev/my+proj@2,v1:x%y/.claude/framework/hooks/mark-evaluated.sh \"approved\"' \
+             'bash ./.claude/framework/hooks/mark-plan-closed.sh \"closed\"'; do
+    setup_test_project
+    INPUT='{"tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+    assert_exit_code "0" "$EXIT_CODE" "path form must still be allowed: $cmd"
+    teardown_test_project
+  done
+}
+
+# --- Test: only the two sanctioned names unlock, not any mark-*.sh (a sanctioned
+# name later in the line reaches the allowance, which must still refuse) ---
+test_blocks_other_mark_script() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-other.sh mark-plan-closed.sh"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "an unsanctioned mark-*.sh must not unlock the guard"
+  teardown_test_project
+}
+
+# --- Test: allows lone mark-plan-closed.sh (sanctioned script) ---
+test_allows_mark_plan_closed() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh \"planned vs actual matched\""}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "0" "$EXIT_CODE" "should allow mark-plan-closed.sh"
+  teardown_test_project
+}
+
+# --- Test: allows lone mark-plan-closed.sh in its --note form ---
+test_allows_mark_plan_closed_note() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh --note docs/closure.md"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "0" "$EXIT_CODE" "should allow mark-plan-closed.sh --note"
+  teardown_test_project
+}
+
+# --- Test: chained mark-plan-closed.sh does not unlock ---
+test_blocks_mark_plan_closed_injection() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"sed -i '"'"''"'"' .claude/manifest.json && echo mark-plan-closed.sh"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "chained mark-plan-closed.sh must not unlock the guard"
+  teardown_test_project
+}
+
+# --- Test: a command that merely mentions mark-plan-closed.sh does not unlock ---
+test_blocks_mark_plan_closed_mention() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"cp mark-plan-closed.sh .claude/framework/hooks/stop-checklist.sh"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "mentioning mark-plan-closed.sh as an argument must not unlock the guard"
+  teardown_test_project
+}
+
+# --- Test: lone mark-plan-closed.sh with a redirect must not unlock ---
+test_blocks_mark_plan_closed_redirect() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh summary > .claude/settings.json"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "redirect after mark-plan-closed.sh must not unlock the guard"
+  teardown_test_project
+}
+
+# --- Chain arm, one separator each: the lone-prefixed form followed by a
+# separator must fall through to the framework-path check, never unlock.
+# The tails use tee, which only the framework-path check stops; an rm tail
+# would be caught by the earlier destructive-command check instead. ---
+test_blocks_mark_plan_closed_semicolon() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh s ; tee .claude/settings.json"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "semicolon after mark-plan-closed.sh must not unlock the guard"
+  teardown_test_project
+}
+
+test_blocks_mark_plan_closed_ampersand() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh s & tee .claude/settings.json"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "ampersand after mark-plan-closed.sh must not unlock the guard"
+  teardown_test_project
+}
+
+test_blocks_mark_plan_closed_pipe() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh s | tee .claude/settings.json"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "pipe after mark-plan-closed.sh must not unlock the guard"
+  teardown_test_project
+}
+
+test_blocks_mark_plan_closed_backtick() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh `tee .claude/settings.json`"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "backticks in the summary must not unlock the guard"
+  teardown_test_project
+}
+
+test_blocks_mark_plan_closed_stdin_redirect() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh s < .claude/settings.json"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "stdin redirect after mark-plan-closed.sh must not unlock the guard"
+  teardown_test_project
+}
+
+test_blocks_mark_plan_closed_newline() {
+  setup_test_project
+  # The JSON \n decodes to a real newline in the command string.
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh s\ntee .claude/settings.json"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "newline after mark-plan-closed.sh must not unlock the guard"
+  teardown_test_project
+}
+
+test_blocks_mark_plan_closed_substitution() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh \"$(tee .claude/settings.json)\""}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "substitution inside the summary must not unlock the guard"
+  teardown_test_project
+}
+
+test_blocks_mark_plan_closed_unquoted_substitution() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh $(tee .claude/settings.json)"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "unquoted substitution as the summary must not unlock the guard"
+  teardown_test_project
+}
+
+test_blocks_mark_plan_closed_glued_redirect() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh s>.claude/settings.json"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "glued output redirect must not unlock the guard"
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh s<.claude/settings.json"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "glued input redirect must not unlock the guard"
+  teardown_test_project
+}
+
+# --- Test: a name that merely starts with the script name does not unlock ---
+test_blocks_mark_plan_closed_name_tail() {
+  setup_test_project
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh.bak s"}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "mark-plan-closed.sh.bak must not unlock the guard"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "config-guard.sh"
 test_blocks_write_settings
@@ -361,4 +550,23 @@ test_blocks_rm_claude_glob
 test_blocks_rm_claude_subdir
 test_blocks_mv_claude_slash
 test_blocks_mark_evaluated_redirect
+test_allows_mark_plan_closed
+test_allows_mark_plan_closed_note
+test_blocks_mark_plan_closed_injection
+test_blocks_mark_plan_closed_mention
+test_blocks_mark_plan_closed_redirect
+test_blocks_mark_plan_closed_semicolon
+test_blocks_mark_plan_closed_ampersand
+test_blocks_mark_plan_closed_pipe
+test_blocks_mark_plan_closed_backtick
+test_blocks_mark_plan_closed_stdin_redirect
+test_blocks_mark_plan_closed_newline
+test_blocks_mark_plan_closed_substitution
+test_blocks_mark_plan_closed_unquoted_substitution
+test_blocks_mark_plan_closed_glued_redirect
+test_blocks_mark_plan_closed_name_tail
+test_blocks_assignment_prefix
+test_blocks_expanding_first_word
+test_allows_path_forms
+test_blocks_other_mark_script
 run_tests

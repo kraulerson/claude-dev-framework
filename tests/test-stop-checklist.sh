@@ -172,6 +172,83 @@ test_config_only_fix_not_flagged() {
   teardown_test_project
 }
 
+# Closure is recorded through the sanctioned script, never by touching the marker.
+mark_plan_closed() {
+  (cd "$TEST_DIR" && bash "$HOOK_DIR/mark-plan-closed.sh" "planned vs actual matched" >/dev/null 2>&1) || true
+}
+
+# --- Test: the plan-closure advisory names the script that satisfies it ---
+test_planning_advisory_names_the_script() {
+  setup_stop_test
+  git -C "$TEST_DIR" rev-parse HEAD > "/tmp/.claude_session_start_${TEST_HASH}"
+  commit_source_file "app.kt" "Add app feature"
+
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  assert_contains "$RESULT" "Planning Zone" "advisory should ask for plan closure before marking"
+  assert_contains "$RESULT" "mark-plan-closed.sh" "advisory should name the script to run"
+  CONTEXT=$(echo "$RESULT" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null || echo "")
+  assert_contains "$CONTEXT" 'then run: bash .claude/framework/hooks/mark-plan-closed.sh "one-line summary"' "advisory should render a runnable command"
+  assert_contains "$CONTEXT" "from the project root" "advisory should say where to run the command"
+  assert_contains "$CONTEXT" 'one-line summary" (plain text, no shell punctuation)' "advisory should say the summary is plain text"
+  teardown_test_project
+}
+
+# --- Test: once closure is marked the plan-closure advisory is gone, the rest stays ---
+test_planning_advisory_absent_after_marking() {
+  setup_stop_test
+  git -C "$TEST_DIR" rev-parse HEAD > "/tmp/.claude_session_start_${TEST_HASH}"
+  commit_source_file "app.kt" "Add app feature"
+
+  BEFORE=$(run_hook "$HOOK" "$STOP_INPUT")
+  assert_contains "$BEFORE" "Planning Zone" "advisory present before marking"
+
+  mark_plan_closed
+
+  AFTER=$(run_hook "$HOOK" "$STOP_INPUT")
+  EXIT=$(run_hook_exit_code "$HOOK" "$STOP_INPUT")
+  assert_exit_code "0" "$EXIT" "stop should still exit 0 after marking"
+  assert_not_contains "$AFTER" "Planning Zone" "advisory absent after marking"
+  assert_contains "$AFTER" "Design Zone" "unrelated advisory is unaffected by marking"
+  assert_contains "$AFTER" "Session produced 1 commit(s)" "commit count line stays while an advisory remains"
+  teardown_test_project
+}
+
+# --- Test: with no advisory left the hook prints nothing at all ---
+test_no_output_when_no_advisory_remains() {
+  setup_stop_test
+  git -C "$TEST_DIR" rev-parse HEAD > "/tmp/.claude_session_start_${TEST_HASH}"
+  commit_source_file "app.kt" "Add app feature"
+  touch "/tmp/.claude_superpowers_${TEST_HASH}"
+
+  mark_plan_closed
+
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  EXIT=$(run_hook_exit_code "$HOOK" "$STOP_INPUT")
+  assert_exit_code "0" "$EXIT" "no remaining advisory should exit 0"
+  assert_equals "" "$RESULT" "no remaining advisory should print nothing, commit count included"
+  teardown_test_project
+}
+
+# --- Test: the handoff advisory and its commit count survive closure ---
+test_handoff_advisory_survives_closure() {
+  setup_stop_test
+  jq '.projectConfig._base.contextHistoryFile = "HISTORY.md"' "$TEST_DIR/.claude/manifest.json" > "$TEST_DIR/.claude/manifest.json.tmp"
+  mv "$TEST_DIR/.claude/manifest.json.tmp" "$TEST_DIR/.claude/manifest.json"
+  git -C "$TEST_DIR" add .claude
+  git -C "$TEST_DIR" commit -m "chore: configure context history" --quiet
+  git -C "$TEST_DIR" rev-parse HEAD > "/tmp/.claude_session_start_${TEST_HASH}"
+  commit_source_file "app.kt" "Add app feature"
+  touch "/tmp/.claude_superpowers_${TEST_HASH}"
+
+  mark_plan_closed
+
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  assert_not_contains "$RESULT" "Planning Zone" "closure advisory absent after marking"
+  assert_contains "$RESULT" "Discovery Zone" "handoff advisory still delivered"
+  assert_contains "$RESULT" "Session produced 1 commit(s)" "commit count line still delivered with the handoff advisory"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "stop-checklist.sh"
 test_stop_hook_active_short_circuits
@@ -184,4 +261,8 @@ test_multi_commit_bugfix_detection
 test_bugfix_with_test_passes
 test_merge_commit_with_fix_subject_not_flagged
 test_config_only_fix_not_flagged
+test_planning_advisory_names_the_script
+test_planning_advisory_absent_after_marking
+test_no_output_when_no_advisory_remains
+test_handoff_advisory_survives_closure
 run_tests

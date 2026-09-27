@@ -39,7 +39,7 @@ When a session ends (not initiated by the user), `stop-checklist.sh` checks:
 - Was context history updated in long sessions? → **blocks**
 
 If all checks pass and the session produced commits, it also **advises**:
-- **Plan closure** — if no plan closure marker exists, reminds you to document planned vs. actual outcomes
+- **Plan closure** — if no plan closure marker exists, reminds you to document planned vs. actual outcomes and names the script that records it (`mark-plan-closed.sh`); once the marker exists the reminder stops for the rest of the session
 - **Session handoff** — reminds you to save a handoff note to the context history file
 
 If the session ends due to `stop_reason: "user"` or `stop_reason: "tool_error"`, the checklist is skipped entirely.
@@ -50,11 +50,11 @@ Markers are temporary files in `/tmp/` that track workflow completion. They are 
 
 | Marker | Created when | Cleared when | Checked by |
 |--------|-------------|--------------|------------|
-| `.claude_evaluated_{hash}` | You present an evaluation and get user approval, then run `touch` | After successful `git commit` | `enforce-evaluate.sh` |
-| `.claude_superpowers_{hash}` | You invoke a Superpowers skill, then run `touch` | After successful `git commit` | `enforce-superpowers.sh` |
+| `.claude_evaluated_{hash}` | You present an evaluation and get user approval, then run `mark-evaluated.sh` with a reason | After successful `git commit` | `enforce-evaluate.sh` |
+| `.claude_superpowers_{hash}` | You invoke a Superpowers skill (`marker-tracker.sh` creates it, automatic) | After successful `git commit` | `enforce-superpowers.sh` |
 | `.claude_session_start_{hash}` | Session starts (automatic) | Session ends | `stop-checklist.sh` |
 | `.claude_changelog_synced_{hash}` | Sync script succeeds (automatic) | Not auto-cleared | `changelog-sync-check.sh` |
-| `.claude_plan_closed_{hash}` | You document plan closure, then run `touch` | Session ends | `stop-checklist.sh` |
+| `.claude_plan_closed_{hash}` | You document plan closure, then run `mark-plan-closed.sh` with a one-line summary or `--note <path>` | Fresh session start (startup/clear) or session end; kept across resume and compact | `stop-checklist.sh` |
 
 **Important**: The evaluation and Superpowers markers clear after each commit (via `marker-tracker.sh`). This means for each new piece of work in a session, you must go through those workflows again. This is intentional — it prevents a single approval from covering unrelated changes. Other markers have different lifecycles (see the "Cleared when" column above).
 
@@ -65,10 +65,10 @@ When you receive an advisory (additionalContext), you should:
 1. **Acknowledge it** — don't ignore the reminder
 2. **Follow the workflow** — present an evaluation, invoke Superpowers, etc.
 3. **Get user approval** — the user confirms or says "skip"
-4. **Create the marker** — run the `touch` command to record completion
+4. **Record completion** — the framework creates the marker when the skill is invoked; for an approved evaluation run `mark-evaluated.sh`, for documented plan closure run `mark-plan-closed.sh` (never `touch`)
 5. **Proceed** — you can now write source files or commit
 
-If the user says "skip evaluation" or "skip superpowers", create the marker anyway — the user has made a deliberate choice.
+If the user says "skip evaluation", run `mark-evaluated.sh` with that as the reason; if they say "skip closure", run `mark-plan-closed.sh` with that as the summary — the user has made a deliberate choice and the record says so. The Superpowers marker has no sanctioned script: invoking a skill is the only way it is created.
 
 ## Responding to Hard Blocks
 

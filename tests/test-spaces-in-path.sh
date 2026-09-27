@@ -90,6 +90,26 @@ MANIFEST
   stop_exit=$?
   assert_exit_code "0" "$stop_exit" "stop-checklist should succeed with spaces in path"
 
+  # Test plan closure end to end in the spaced project: the advisory is present,
+  # the installed script marks closure, and the advisory is gone afterwards.
+  git -C "$TEST_DIR" add -A
+  git -C "$TEST_DIR" commit -m "chore: track framework files" --quiet
+  echo "// code" > "$TEST_DIR/app.kt"
+  git -C "$TEST_DIR" add app.kt
+  git -C "$TEST_DIR" commit -m "Add app" --quiet
+  stop_output=$(cd "$TEST_DIR" && echo '{"hook_event_name":"Stop","stop_hook_active":false}' | bash "$TEST_DIR/.claude/framework/hooks/stop-checklist.sh" 2>&1)
+  assert_contains "$stop_output" "Planning Zone" "closure advisory should be present before marking (spaced path)"
+
+  local close_output close_exit
+  close_output=$(cd "$TEST_DIR" && bash ".claude/framework/hooks/mark-plan-closed.sh" "closed in a spaced path" 2>&1)
+  close_exit=$?
+  assert_exit_code "0" "$close_exit" "mark-plan-closed should succeed with spaces in path"
+  assert_contains "$close_output" "Plan closure marker created" "mark-plan-closed should confirm with spaced path"
+  assert_file_exists "/tmp/.claude_plan_closed_${TEST_HASH}" "marker should be keyed by the spaced project path"
+
+  stop_output=$(cd "$TEST_DIR" && echo '{"hook_event_name":"Stop","stop_hook_active":false}' | bash "$TEST_DIR/.claude/framework/hooks/stop-checklist.sh" 2>&1)
+  assert_not_contains "$stop_output" "Planning Zone" "closure advisory should be absent after marking (spaced path)"
+
   # Clean up
   rm -f "/tmp/.claude_evaluated_${TEST_HASH}"
   rm -f "/tmp/.claude_superpowers_${TEST_HASH}"
