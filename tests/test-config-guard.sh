@@ -6,6 +6,20 @@ source "$SCRIPT_DIR/helpers/setup.sh"
 
 HOOK="$HOOK_DIR/config-guard.sh"
 
+# Hook input built with jq, so a command needs no JSON escaping; $2 sets the
+# input's cwd (the agent's working directory), omitted when empty.
+cg_input() { jq -nc --arg c "$1" --arg d "${2:-}" '{tool_name:"Bash",tool_input:{command:$c}} + (if $d == "" then {} else {cwd:$d} end)'; }
+cg_write_input() { jq -nc --arg p "$1" '{tool_name:"Write",tool_input:{file_path:$p,content:"x"}}'; }
+# A PATH holding only the tools the guards need minus `tr`, so the guard's own
+# pipeline fails mid-run: an internal failure must block, not let the call through
+# (Claude Code treats any exit other than 2 as non-blocking) (#11 review).
+run_without_tr() {
+  local bin c; bin=$(mktemp -d)
+  for c in cat dirname jq grep sed; do ln -s "$(command -v "$c")" "$bin/$c"; done
+  (cd "$TEST_DIR" && printf '%s' "$2" | PATH="$bin" /bin/bash "$1" 2>&1; echo "rc=$?")
+  rm -rf "$bin"
+}
+
 # =============================================
 # Write/Edit tool blocking (.claude/ config files)
 # =============================================
@@ -356,19 +370,280 @@ test_blocks_expanding_first_word() {
   done
 }
 
-# --- Test: the absolute and ./ path forms still unlock (enforce-evaluate.sh
-# prints the absolute form) ---
+# --- Test: the project's own scripts unlock by relative, ./ and absolute path
+# (an absolute path still works where the project path has no space) ---
 test_allows_path_forms() {
   local cmd
-  for cmd in 'bash /Users/dev/my-proj/.claude/framework/hooks/mark-evaluated.sh \"approved: retries=3\"' \
-             'bash /Users/dev/my+proj@2,v1:x%y/.claude/framework/hooks/mark-evaluated.sh \"approved\"' \
-             'bash ./.claude/framework/hooks/mark-plan-closed.sh \"closed\"'; do
-    setup_test_project
-    INPUT='{"tool_name":"Bash","tool_input":{"command":"'"$cmd"'"}}'
-    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  setup_test_project
+  for cmd in "bash $TEST_DIR/.claude/framework/hooks/mark-evaluated.sh \"approved: retries=3\"" \
+             'bash ./.claude/framework/hooks/mark-plan-closed.sh "closed"' \
+             'bash .claude/framework/hooks/mark-evaluated.sh "approved"'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd")")
     assert_exit_code "0" "$EXIT_CODE" "path form must still be allowed: $cmd"
-    teardown_test_project
   done
+  teardown_test_project
+}
+
+# --- Test: a project path with + @ , : % still unlocks ---
+test_allows_project_path_with_punctuation() {
+  setup_test_project
+  local proj="$TEST_DIR/my+proj@2,v1:x%y" saved="$CLAUDE_PROJECT_DIR"
+  mkdir -p "$proj/.claude/framework/hooks"
+  export CLAUDE_PROJECT_DIR="$proj"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "bash $proj/.claude/framework/hooks/mark-evaluated.sh \"approved\"")")
+  export CLAUDE_PROJECT_DIR="$saved"
+  assert_exit_code "0" "$EXIT_CODE" "a project path with + @ , : % must still be allowed"
+  teardown_test_project
+}
+
+# --- Test (#11 case 1): a script with a sanctioned name outside the project's
+# hooks folder does not unlock ---
+test_blocks_sanctioned_name_elsewhere() {
+  local cmd
+  setup_test_project
+  mkdir -p "$TEST_DIR/evil"
+  for cmd in 'bash evil/mark-plan-closed.sh .claude/settings.json' \
+             'bash /tmp/mark-evaluated.sh .claude/manifest.json'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "must not unlock: $cmd"
+  done
+  teardown_test_project
+}
+
+# --- Test (#11 case 1): a relative script path is resolved from the agent's cwd ---
+test_relative_script_resolved_from_cwd() {
+  setup_test_project
+  local other cmd='bash .claude/framework/hooks/mark-evaluated.sh "approved"'
+  other=$(mktemp -d); mkdir -p "$other/.claude/framework/hooks"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd" "$other")")
+  assert_exit_code "2" "$EXIT_CODE" "a relative script under another cwd must not unlock"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd" "$TEST_DIR")")
+  assert_exit_code "0" "$EXIT_CODE" "the same command from the project root still unlocks"
+  rm -rf "$other"
+  teardown_test_project
+}
+
+# --- Test (#11 case 2): a command longer than the pipe buffer is still inspected, by
+# each check separately (protected path, rm of .claude, CLAUDE_PROJECT_DIR=) ---
+test_blocks_long_multiline_command() {
+  local pad cmd
+  setup_test_project
+  pad=$(head -c 200000 /dev/zero | tr '\0' x)
+  for cmd in 'cp /dev/null .claude/settings.json' 'rm -rf .claude/plans' 'CLAUDE_PROJECT_DIR=/x true'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd
+# $pad")")
+    assert_exit_code "2" "$EXIT_CODE" "a 200 KB multi-line command must still be blocked: $cmd"
+  done
+  teardown_test_project
+}
+
+# --- Test (#11 case 3): a literal path into a temp fixture is not the project's config ---
+test_allows_temp_fixture_paths() {
+  local base fx cmd
+  setup_test_project
+  base=$(mktemp -d); fx="$base/fx"; mkdir -p "$fx/.claude/framework/hooks"
+  for cmd in "echo '{}' > $fx/.claude/manifest.json" \
+             "cp /dev/null $fx/.claude/settings.json" \
+             "cp /dev/null $fx/.claude/framework/hooks/x.sh" \
+             "cp /dev/null $fx/.Claude/Settings.json" \
+             "mkdir -p $fx/.claude/framework/hooks" \
+             "cat /dev/null > \"$fx/.claude/settings.local.json\"" \
+             "bash $fx/.claude/framework/hooks/config-guard.sh < /dev/null"; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd")")
+    assert_exit_code "0" "$EXIT_CODE" "temp fixture path must be allowed: $cmd"
+  done
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_write_input "$fx/.claude/manifest.json")")
+  assert_exit_code "0" "$EXIT_CODE" "Write to a temp fixture manifest must be allowed"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_write_input "$fx/.claude/framework/hooks/x.sh")")
+  assert_exit_code "0" "$EXIT_CODE" "Write to a temp fixture hook must be allowed"
+  rm -rf "$base"
+  teardown_test_project
+}
+
+# --- Test (#11 case 3): a path the text alone cannot pin to a temp fixture stays blocked ---
+test_blocks_unpinnable_fixture_paths() {
+  local base fx cmd
+  setup_test_project
+  base=$(mktemp -d); fx="$base/fx"; mkdir -p "$fx/.claude"
+  ln -s "$TEST_DIR" "$base/link"
+  for cmd in "cp /dev/null $TEST_DIR/.claude/settings.json" \
+             'cp /dev/null $FX/.claude/settings.json' \
+             "cp /dev/null $base/link/.claude/settings.json" \
+             "cp /dev/null $fx/../fx/.claude/settings.json" \
+             "cp /dev/null $base/*/.claude/settings.json" \
+             "cp /dev/null \"a $fx/.claude/settings.json\"" \
+             "cp /dev/null a\\ $fx/.claude/settings.json" \
+             "cp /dev/null x\"$fx/.claude/settings.json\"" \
+             "cp /dev/null ~/.claude/settings.json" \
+             "cp /dev/null ~$fx/.claude/settings.json" \
+             "cp /dev/null x=$fx/.claude/settings.json" \
+             "cp /dev/null $fx/.claude/settings.json; cp /dev/null .claude/settings.json" \
+             "cp /dev/null $fx/.claude/settings.json .Claude/settings.json" \
+             'echo hello # .claude/manifest.json' \
+             "ln -s $TEST_DIR $base/x1 && cp /dev/null $base/x1/.claude/settings.json" \
+             "ln -s $TEST_DIR $base/x2; cp /dev/null $base/x2/.claude/settings.json" \
+             "ln -s $TEST_DIR $base/x3
+cp /dev/null $base/x3/.claude/settings.json" \
+             "ln -s $TEST_DIR $base/x4 & cp /dev/null $base/x4/.claude/settings.json" \
+             "true | cp /dev/null $fx/.claude/settings.json" \
+             "cat > $fx/.claude/manifest.json <<'EOF'
+{}
+EOF" \
+             "cp /dev/null \`true\` $fx/.claude/settings.json" \
+             "cp /dev/null \$(true) $fx/.claude/settings.json" \
+             "cp /dev/null $fx/.claude/settings.json # note" \
+             "cp /dev/null \${X:-} $fx/.claude/settings.json" \
+             "cp /dev/null \$'x' $fx/.claude/settings.json" \
+             "printf %s $(head -c 17000 /dev/zero | tr '\0' a) > $fx/.claude/settings.json"; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "must stay blocked: $cmd"
+  done
+  for cmd in "$TEST_DIR/.claude/manifest.json" "$base/link/.claude/settings.json" \
+             "$fx/../fx/.claude/manifest.json" "/Users/nobody/proj/.claude/manifest.json"; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_write_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "Write must stay blocked: $cmd"
+  done
+  rm -rf "$base"
+  teardown_test_project
+}
+
+# --- Test (#11 comment): a read-only first word no longer admits the rest of the line,
+# and read-only tools' writing/executing options do not count as read-only ---
+test_blocks_read_only_word_with_payload() {
+  local cmd
+  setup_test_project
+  for cmd in 'cat /dev/null; cp /dev/null .claude/settings.json' \
+             'git log -1; cp /dev/null .claude/settings.json' \
+             'grep -q x /dev/null && cp /dev/null .claude/manifest.json' \
+             "awk 'BEGIN{system(\"cp /dev/null .claude/settings.json\")}'" \
+             'rg --pre cp x .claude/settings.json' \
+             'git diff --output=.claude/settings.json' \
+             'git grep -Ocp x -- .claude/settings.json' \
+             'bat --pager=cp .claude/settings.json' \
+             'less -o .claude/settings.json /dev/null'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "must stay blocked: $cmd"
+  done
+  RESULT=$(run_hook "$HOOK" "$(cg_input 'cat .claude/settings.json | jq .')")
+  assert_contains "$RESULT" "single command" "the block message says read-only inspection must be a single command"
+  for cmd in 'cat .claude/settings.json' 'rg -n x .claude/settings.json' \
+             'git log --oneline -- .claude/manifest.json' 'grep -c x .claude/manifest.json' \
+             'git log -SOops -- .claude/manifest.json'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd")")
+    assert_exit_code "0" "$EXIT_CODE" "a lone read-only command must still be allowed: $cmd"
+  done
+  teardown_test_project
+}
+
+# --- Test (#11 review): the bare .claude, .claude/framework and .claude/framework/hooks
+# directories are protected as copy/move destinations ---
+test_blocks_bare_protected_dirs() {
+  local cmd
+  setup_test_project
+  for cmd in 'cp /tmp/x.sh .claude/framework/hooks' 'cp -r /tmp/fx/.claude/framework .claude/' \
+             'mv /tmp/h .claude/framework' 'cp /tmp/x.sh ".claude/framework/hooks"' \
+             'cp -r /tmp/hooks .claude/framework/.' 'rm -rf .Claude/plans'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "must be blocked: $cmd"
+  done
+  # Mentioning .claude as a word is not a write (#11 review): only the framework
+  # directories are protected as bare destinations.
+  for cmd in 'mkdir -p .claude/plans' 'ls .claude' 'cp /tmp/x .claude/plans/y.md' \
+             'cat ~/.claude.json' 'ls ~/.claude-dev-framework' \
+             'git commit -m "update .claude config"' 'find . -name .claude' 'du -sh .claude' \
+             'tar czf backup.tgz .claude' 'echo edited .claude, done' \
+             'jq . package.json # writes to .claude later'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd")")
+    assert_exit_code "0" "$EXIT_CODE" "must still be allowed: $cmd"
+  done
+  teardown_test_project
+}
+
+# --- Test (#11 review): a non-canonical spelling (//, /./, x/../) still names the
+# protected path, for Bash and Write ---
+test_blocks_noncanonical_paths() {
+  local cmd
+  setup_test_project
+  for cmd in 'cp /tmp/x.sh .claude/framework/./hooks/config-guard.sh' \
+             'cp /tmp/x.sh .claude//framework/hooks/config-guard.sh' \
+             'cp /tmp/x.sh .claude/framework/x/../hooks/config-guard.sh' \
+             'cp /tmp/s .claude/./settings.json' 'cp /tmp/s .claude//manifest.json' \
+             'cp -r /tmp/h .claude/framework/x/..' 'rm -rf .//.claude' \
+             'cp /tmp/x.sh ".claude/a b/../framework/hooks/config-guard.sh"' \
+             "cp /tmp/x.sh .claude/'framework'/hooks/config-guard.sh" \
+             'cp /tmp/x.sh .claude/fra\mework/hooks/config-guard.sh' \
+             "cp /tmp/s .claude/sett''ings.json"; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "must be blocked: $cmd"
+  done
+  # An ordinary file reached through `..` is still allowed (the normalizer must not crash).
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_write_input "/Users/../$TEST_DIR/notes.md")")
+  assert_exit_code "0" "$EXIT_CODE" "Write to an ordinary file through /Users/../ must be allowed"
+  for cmd in "$TEST_DIR/.claude//settings.json" "$TEST_DIR/.claude/./manifest.json" \
+             "$TEST_DIR/.claude/x/../settings.json" "/Users/../$TEST_DIR/.claude/settings.json" \
+             "/private/../$TEST_DIR/.claude/framework/hooks/x.sh"; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_write_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "Write must be blocked: $cmd"
+  done
+  teardown_test_project
+}
+
+# A PATH with the guards' tools but no jq (#11 review).
+run_without_jq() {
+  local bin c; bin=$(mktemp -d)
+  for c in cat dirname grep sed tr; do ln -s "$(command -v "$c")" "$bin/$c"; done
+  (cd "$TEST_DIR" && printf '%s' "$2" | PATH="$bin" /bin/bash "$1" 2>&1; echo "rc=$?")
+  rm -rf "$bin"
+}
+
+# --- Test (#11 review): without a working jq the guard refuses every call. The input
+# is real-shaped: Claude Code always sends transcript_path, which lies under ~/.claude. ---
+test_without_jq_blocks_framework_calls() {
+  local out bin
+  setup_test_project
+  out=$(run_without_jq "$HOOK" '{"session_id":"s1","transcript_path":"/Users/someone/.claude/projects/p/s1.jsonl","cwd":"/tmp","permission_mode":"default","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls -la"}}')
+  assert_contains "$out" "rc=2" "without jq, config-guard must refuse the call"
+  assert_contains "$out" "jq is not installed" "the block names the missing jq"
+  bin=$(mktemp -d)
+  printf '#!/bin/sh\nexit 1\n' > "$bin/jq"; chmod +x "$bin/jq"
+  out=$(cd "$TEST_DIR" && printf '%s' '{"session_id":"s1","transcript_path":"/Users/someone/.claude/projects/p/s1.jsonl","cwd":"/tmp","permission_mode":"default","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls -la"}}' | PATH="$bin:$PATH" /bin/bash "$HOOK" 2>&1; echo "rc=$?")
+  assert_contains "$out" "rc=2" "with a broken jq, config-guard must refuse the call"
+  rm -rf "$bin"
+  teardown_test_project
+}
+
+# --- Test (#11 review): an internal failure blocks rather than allowing the call ---
+test_internal_failure_blocks() {
+  local out
+  setup_test_project
+  out=$(run_without_tr "$HOOK" "$(cg_write_input "$TEST_DIR/.claude/settings.json")")
+  assert_contains "$out" "rc=2" "config-guard must block when its own pipeline fails"
+  assert_contains "$out" "failed internally" "the block says the guard failed internally"
+  teardown_test_project
+}
+
+# --- Test (#11 review): other letter cases name the same files on a case-insensitive disk ---
+test_blocks_case_variants() {
+  local cmd
+  setup_test_project
+  for cmd in 'cp /dev/null .Claude/settings.json' 'cp /dev/null .claude/Settings.JSON' \
+             'cp /tmp/x.sh .CLAUDE/Framework/Hooks/config-guard.sh'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "must be blocked: $cmd"
+  done
+  for cmd in "$TEST_DIR/.Claude/settings.json" "$TEST_DIR/.claude/Framework/hooks/x.sh"; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_write_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "Write must be blocked: $cmd"
+  done
+  teardown_test_project
+}
+
+# --- Test (#11 review): a name that only ends in a sanctioned name does not unlock ---
+test_blocks_prefixed_sanctioned_name() {
+  setup_test_project
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input 'bash .claude/framework/hooks/xmark-evaluated.sh "approved"')")
+  assert_exit_code "2" "$EXIT_CODE" "xmark-evaluated.sh in the hooks folder must not unlock"
+  teardown_test_project
 }
 
 # --- Test: only the two sanctioned names unlock, not any mark-*.sh (a sanctioned
@@ -568,5 +843,18 @@ test_blocks_mark_plan_closed_name_tail
 test_blocks_assignment_prefix
 test_blocks_expanding_first_word
 test_allows_path_forms
+test_allows_project_path_with_punctuation
+test_blocks_sanctioned_name_elsewhere
+test_relative_script_resolved_from_cwd
+test_blocks_long_multiline_command
+test_allows_temp_fixture_paths
+test_blocks_unpinnable_fixture_paths
+test_blocks_read_only_word_with_payload
 test_blocks_other_mark_script
+test_blocks_bare_protected_dirs
+test_blocks_noncanonical_paths
+test_internal_failure_blocks
+test_without_jq_blocks_framework_calls
+test_blocks_case_variants
+test_blocks_prefixed_sanctioned_name
 run_tests

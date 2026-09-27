@@ -43,7 +43,6 @@ fi
 HASH=$(get_project_hash)
 [ -f "/tmp/.claude_evaluated_${HASH}" ] && exit 0
 
-FRAMEWORK_DIR=$(get_framework_dir)
 cat >&2 << MSG
 BLOCKED — Commit requires evaluate-before-implement workflow.
 
@@ -53,8 +52,8 @@ Do NOT assume the user approves because they asked for the change.
 Do NOT skip this because the change seems simple.
 Do NOT create the marker manually with touch.
 
-After presenting your evaluation and receiving user approval, run:
-bash ${FRAMEWORK_DIR}/hooks/mark-evaluated.sh "brief description of what was approved"
+After presenting your evaluation and receiving user approval, run from the project root:
+bash .claude/framework/hooks/mark-evaluated.sh "brief description of what was approved"
 Then retry the commit.
 
 COMPLIANCE REMINDER: Your obligation is compliance first, speed second. There is no task small enough to skip this requirement. Do not classify this change as trivial. Do not run a cost-benefit analysis against the process. Follow the required workflow, then proceed.

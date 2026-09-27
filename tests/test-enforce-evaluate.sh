@@ -24,6 +24,8 @@ test_commit_without_marker() {
   assert_exit_code "2" "$EXIT_CODE" "should block with exit 2"
   assert_contains "$RESULT" "BLOCKED" "should say BLOCKED"
   assert_contains "$RESULT" "evaluate-before-implement" "should mention the rule"
+  # The relative form from the project root: an absolute path breaks on a space (#11 review).
+  assert_contains "$RESULT" 'bash .claude/framework/hooks/mark-evaluated.sh "' "should print the relative mark-evaluated.sh command"
   teardown_test_project
 }
 

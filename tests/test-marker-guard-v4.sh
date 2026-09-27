@@ -6,6 +6,19 @@ source "$SCRIPT_DIR/helpers/setup.sh"
 
 HOOK="$HOOK_DIR/marker-guard.sh"
 
+# Hook input built with jq, so a command needs no JSON escaping; $2 sets the
+# input's cwd (the agent's working directory), omitted when empty.
+mg_input() { jq -nc --arg c "$1" --arg d "${2:-}" '{tool_name:"Bash",tool_input:{command:$c}} + (if $d == "" then {} else {cwd:$d} end)'; }
+# A PATH holding only the tools the guards need minus `tr`, so the guard's own
+# pipeline fails mid-run: an internal failure must block, not let the call through
+# (Claude Code treats any exit other than 2 as non-blocking) (#11 review).
+run_without_tr() {
+  local bin c; bin=$(mktemp -d)
+  for c in cat dirname jq grep sed; do ln -s "$(command -v "$c")" "$bin/$c"; done
+  (cd "$TEST_DIR" && printf '%s' "$2" | PATH="$bin" /bin/bash "$1" 2>&1; echo "rc=$?")
+  rm -rf "$bin"
+}
+
 # --- Test: blocks manual plan_active marker creation ---
 test_blocks_plan_active() {
   setup_test_project
@@ -414,20 +427,128 @@ test_blocks_expanding_first_word() {
   done
 }
 
-# --- Test: the absolute and ./ path forms still unlock (enforce-evaluate.sh
-# prints the absolute form). Each names a marker, so only the allowance can pass it. ---
+# --- Test: the project's own scripts unlock by relative, ./ and absolute path
+# (an absolute path still works where the project path has no space). Each names a marker, so only
+# the allowance can pass it. ---
 test_allows_path_forms() {
   local cmd
-  for cmd in 'bash /Users/dev/my-proj/.claude/framework/hooks/mark-evaluated.sh \"approved: retries=3 for /tmp/.claude_evaluated_x\"' \
-             'bash /Users/dev/my+proj@2,v1:x%y/.claude/framework/hooks/mark-evaluated.sh \"approved: /tmp/.claude_evaluated_x\"' \
-             'bash ./.claude/framework/hooks/mark-plan-closed.sh \"closed: /tmp/.claude_plan_closed_x\"' \
-             '~/.claude-dev-framework/hooks/mark-evaluated.sh \"approved: /tmp/.claude_evaluated_x\"'; do
-    setup_test_project
-    INPUT='{"tool_input":{"command":"'"$cmd"'"}}'
-    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  setup_test_project
+  for cmd in "bash $TEST_DIR/.claude/framework/hooks/mark-evaluated.sh \"approved: retries=3 for /tmp/.claude_evaluated_x\"" \
+             'bash ./.claude/framework/hooks/mark-plan-closed.sh "closed: /tmp/.claude_plan_closed_x"' \
+             'bash .claude/framework/hooks/mark-evaluated.sh "approved: /tmp/.claude_evaluated_x"'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(mg_input "$cmd")")
     assert_exit_code "0" "$EXIT_CODE" "path form must still be allowed: $cmd"
-    teardown_test_project
   done
+  teardown_test_project
+}
+
+# --- Test: a project path with + @ , : % still unlocks ---
+test_allows_project_path_with_punctuation() {
+  setup_test_project
+  local proj="$TEST_DIR/my+proj@2,v1:x%y" saved="$CLAUDE_PROJECT_DIR"
+  mkdir -p "$proj/.claude/framework/hooks"
+  export CLAUDE_PROJECT_DIR="$proj"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(mg_input "bash $proj/.claude/framework/hooks/mark-evaluated.sh \"approved: /tmp/.claude_evaluated_x\"")")
+  export CLAUDE_PROJECT_DIR="$saved"
+  assert_exit_code "0" "$EXIT_CODE" "a project path with + @ , : % must still be allowed"
+  teardown_test_project
+}
+
+# --- Test (#11 case 1): a script with a sanctioned name outside the project's
+# hooks folder does not unlock ---
+test_blocks_sanctioned_name_elsewhere() {
+  local cmd
+  setup_test_project
+  mkdir -p "$TEST_DIR/evil"
+  for cmd in 'bash evil/mark-evaluated.sh /tmp/.claude_evaluated_abc123' \
+             'bash /tmp/mark-plan-closed.sh /tmp/.claude_plan_closed_abc123' \
+             '~/.claude-dev-framework/hooks/mark-evaluated.sh "approved: /tmp/.claude_evaluated_abc123"'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(mg_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "must not unlock: $cmd"
+  done
+  teardown_test_project
+}
+
+# --- Test (#11 case 1): a relative script path is resolved from the agent's cwd ---
+test_relative_script_resolved_from_cwd() {
+  setup_test_project
+  local other cmd='bash .claude/framework/hooks/mark-evaluated.sh "approved: /tmp/.claude_evaluated_abc123"'
+  other=$(mktemp -d); mkdir -p "$other/.claude/framework/hooks"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(mg_input "$cmd" "$other")")
+  assert_exit_code "2" "$EXIT_CODE" "a relative script under another cwd must not unlock"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(mg_input "$cmd" "$TEST_DIR")")
+  assert_exit_code "0" "$EXIT_CODE" "the same command from the project root still unlocks"
+  rm -rf "$other"
+  teardown_test_project
+}
+
+# --- Test (#11 case 2): a command longer than the pipe buffer is still inspected ---
+test_blocks_long_multiline_command() {
+  setup_test_project
+  local cmd
+  cmd="touch /tmp/.claude_evaluated_abc123
+# $(head -c 200000 /dev/zero | tr '\0' x)"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(mg_input "$cmd")")
+  assert_exit_code "2" "$EXIT_CODE" "a 200 KB multi-line command naming a marker must be blocked"
+  teardown_test_project
+}
+
+# --- Test (#11 review): other letter cases name the same marker on a case-insensitive disk ---
+test_blocks_marker_case_variants() {
+  local cmd
+  setup_test_project
+  for cmd in 'touch /tmp/.Claude_evaluated_abc123' 'touch /tmp/.CLAUDE_EVALUATED_abc123'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(mg_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "must be blocked: $cmd"
+  done
+  for cmd in /tmp/.Claude_evaluated_abc123 /private/tmp/.CLAUDE_superpowers_abc123 /TMP/.claude_evaluated_abc123 \
+             /tmp/../tmp/.claude_evaluated_abc123 /Users/../tmp/.claude_evaluated_abc123; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(jq -nc --arg p "$cmd" '{tool_name:"Write",tool_input:{file_path:$p,content:"x"}}')")
+    assert_exit_code "2" "$EXIT_CODE" "Write must be blocked: $cmd"
+  done
+  teardown_test_project
+}
+
+# A PATH with the guards' tools but no jq (#11 review).
+run_without_jq() {
+  local bin c; bin=$(mktemp -d)
+  for c in cat dirname grep sed tr; do ln -s "$(command -v "$c")" "$bin/$c"; done
+  (cd "$TEST_DIR" && printf '%s' "$2" | PATH="$bin" /bin/bash "$1" 2>&1; echo "rc=$?")
+  rm -rf "$bin"
+}
+
+# --- Test (#11 review): without a working jq the guard refuses every call. The input
+# is real-shaped: Claude Code always sends transcript_path, which lies under ~/.claude. ---
+test_without_jq_blocks_marker_calls() {
+  local out bin
+  setup_test_project
+  out=$(run_without_jq "$HOOK" '{"session_id":"s1","transcript_path":"/Users/someone/.claude/projects/p/s1.jsonl","cwd":"/tmp","permission_mode":"default","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls -la"}}')
+  assert_contains "$out" "rc=2" "without jq, marker-guard must refuse the call"
+  assert_contains "$out" "jq is not installed" "the block names the missing jq"
+  bin=$(mktemp -d)
+  printf '#!/bin/sh\nexit 1\n' > "$bin/jq"; chmod +x "$bin/jq"
+  out=$(cd "$TEST_DIR" && printf '%s' '{"session_id":"s1","transcript_path":"/Users/someone/.claude/projects/p/s1.jsonl","cwd":"/tmp","permission_mode":"default","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls -la"}}' | PATH="$bin:$PATH" /bin/bash "$HOOK" 2>&1; echo "rc=$?")
+  assert_contains "$out" "rc=2" "with a broken jq, marker-guard must refuse the call"
+  rm -rf "$bin"
+  teardown_test_project
+}
+
+# --- Test (#11 review): an internal failure blocks rather than allowing the call ---
+test_internal_failure_blocks() {
+  local out
+  setup_test_project
+  out=$(run_without_tr "$HOOK" "$(jq -nc '{tool_name:"Write",tool_input:{file_path:"/tmp/.claude_evaluated_abc123",content:"x"}}')")
+  assert_contains "$out" "rc=2" "marker-guard must block when its own pipeline fails"
+  assert_contains "$out" "failed internally" "the block says the guard failed internally"
+  teardown_test_project
+}
+
+# --- Test (#11 review): a name that only ends in a sanctioned name does not unlock ---
+test_blocks_prefixed_sanctioned_name() {
+  setup_test_project
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(mg_input 'bash .claude/framework/hooks/xmark-evaluated.sh /tmp/.claude_evaluated_abc123')")
+  assert_exit_code "2" "$EXIT_CODE" "xmark-evaluated.sh in the hooks folder must not unlock"
+  teardown_test_project
 }
 
 # --- Test: only the two sanctioned names unlock, not any mark-*.sh (a sanctioned
@@ -499,6 +620,14 @@ test_blocks_mark_plan_closed_name_tail
 test_blocks_assignment_prefix
 test_blocks_expanding_first_word
 test_allows_path_forms
+test_allows_project_path_with_punctuation
+test_blocks_sanctioned_name_elsewhere
+test_relative_script_resolved_from_cwd
+test_blocks_long_multiline_command
+test_blocks_marker_case_variants
+test_internal_failure_blocks
+test_without_jq_blocks_marker_calls
+test_blocks_prefixed_sanctioned_name
 test_blocks_other_mark_script
 test_block_message_names_scripts
 run_tests
