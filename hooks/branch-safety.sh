@@ -39,6 +39,49 @@ for pb in $PROTECTED; do
   fi
 done
 
+# A refspec names where a push lands, so `git push origin HEAD:main` from a feature
+# branch moves main (#18): block on each destination after `git push`, and on a push
+# that reaches every branch. Refspecs set through git config, aliases and variables
+# are out of scope for a text check; server-side branch protection is the control.
+push_destinations() {
+  local cmd="$1" seg word dst after_git in_push
+  local -a words
+  cmd=${cmd//&&/$'\n'}; cmd=${cmd//||/$'\n'}; cmd=${cmd//;/$'\n'}; cmd=${cmd//|/$'\n'}
+  while IFS= read -r seg; do
+    read -ra words <<< "$seg"
+    after_git=false; in_push=false
+    for word in ${words[@]+"${words[@]}"}; do
+      word=${word//\"/}; word=${word//\'/}
+      if [[ "$in_push" = false ]]; then
+        [[ "$after_git" = true && "$word" == push ]] && in_push=true
+        [[ "$word" == git || "$word" == */git ]] && after_git=true || after_git=false
+        continue
+      fi
+      case "$word" in
+        --all|--branches|--mirror|:) echo ":ALL:"; continue ;;
+      esac
+      dst=${word#*:}
+      dst=${dst#refs/heads/}
+      if [[ "$dst" == *"*"* ]]; then echo ":ALL:"; else echo "$dst"; fi
+    done
+  done <<< "$cmd"
+  return 0
+}
+
+while IFS= read -r dst; do
+  [[ -z "$dst" ]] && continue
+  if [[ "$dst" == ":ALL:" && -n "$PROTECTED" ]]; then
+    printf "PUSH BLOCKED — This push reaches every branch, including the protected ones (%s). Push a single non-protected branch instead.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second. There is no task small enough to skip this requirement. Do not classify this change as trivial. Do not run a cost-benefit analysis against the process. Follow the required workflow, then proceed." "$(echo $PROTECTED)" >&2
+    exit 2
+  fi
+  for pb in $PROTECTED; do
+    if [[ "$dst" == "$pb" ]]; then
+      printf "PUSH BLOCKED — This push names protected branch '%s' as its destination. Direct pushes are not allowed.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second. There is no task small enough to skip this requirement. Do not classify this change as trivial. Do not run a cost-benefit analysis against the process. Follow the required workflow, then proceed." "$pb" >&2
+      exit 2
+    fi
+  done
+done <<< "$(push_destinations "$COMMAND")"
+
 DEV_BRANCHES=$(get_branch_config_array '.devBranches')
 if [ -n "$DEV_BRANCHES" ]; then
   ALLOWED=false
