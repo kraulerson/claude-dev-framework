@@ -151,6 +151,41 @@ check_context7() {
   return 1
 }
 
+# The Claude Code settings files that can enable a plugin, highest precedence first:
+# the project's local and shared settings, then the user's — under
+# $CLAUDE_CONFIG_DIR when it is set, as `claude plugin install --scope user` writes
+# there, else ~/.claude.
+plugin_settings_files() {
+  printf '%s\n' "${CLAUDE_PROJECT_DIR:-.}/.claude/settings.local.json" \
+    "${CLAUDE_PROJECT_DIR:-.}/.claude/settings.json" \
+    "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+}
+
+# True when the Superpowers plugin is enabled: the first settings file that names a
+# superpowers@<marketplace> entry decides.
+superpowers_enabled() {
+  local f v
+  check_jq || return 1
+  while IFS= read -r f; do
+    [ -f "$f" ] || continue
+    v=$(jq -r '[(.enabledPlugins // {}) | to_entries[] | select(.key | test("^superpowers@")) | .value] | if length == 0 then "unset" else (map(. == true) | any | tostring) end' "$f" 2>/dev/null || echo unset)
+    case "$v" in true) return 0 ;; false) return 1 ;; esac
+  done <<< "$(plugin_settings_files)"
+  return 1
+}
+
+# True when an absolute file path resolves outside the project (symlinks followed),
+# e.g. a scratch file. A relative path, or one with a `.` or `..` segment, counts as
+# inside: the check must not be talked out of enforcing.
+path_outside_project() {
+  local r proj
+  r=$(resolve_path_physical "$1") || return 1
+  proj=$(cd "${CLAUDE_PROJECT_DIR:-$PWD}" 2>/dev/null && pwd -P) || return 1
+  r=$(tr '[:upper:]' '[:lower:]' <<< "$r/"); proj=$(tr '[:upper:]' '[:lower:]' <<< "$proj/")
+  case "$r" in "$proj"*) return 1 ;; esac
+  return 0
+}
+
 # ---- Guard path helpers (marker-guard.sh, config-guard.sh; #11) ----
 
 # Normalize a path lexically (no disk access): collapse `//`, drop `/.` segments,
@@ -218,6 +253,253 @@ CONFIG_GUARD_PROTECTED_RE='\.claude/(settings\.json|settings\.local\.json|manife
 # A lone command: no chaining, piping, redirection, substitution or newline.
 is_lone_command() {
   ! [[ "$1" =~ [\;\&\|\`\>\<] || "$1" == *'$('* || "$1" == *$'\n'* ]]
+}
+
+# Split a Bash command the way the shell does, for the guards to judge each simple
+# command on its own. Prints one line per simple command, its words (quotes and
+# escapes removed) separated by \037, split at an unquoted ; & | ( ) or newline. Then
+# one \001-prefixed line per construct the split cannot follow: subst (`...`, $(...),
+# <(...), also inside double quotes), redirect (an unquoted < or >), comment, ansi
+# ($'...'), backslash (outside quotes) and unterminated (an open quote at the end).
+# A here-document's body is split as if it were commands.
+shell_segments() {
+  printf '%s' "$1" | awk '
+    function flag(f) { flags[f] = 1 }
+    function endword() {
+      if (hw) { gsub(/[\n\t]/, " ", w); line = line (nw ? "\037" : "") w; nw++ }
+      w = ""; hw = 0
+    }
+    function endseg() { endword(); if (nw) print line; line = ""; nw = 0 }
+    { s = s (NR > 1 ? "\n" : "") $0 }
+    END {
+      n = length(s); q = ""; w = ""; hw = 0; line = ""; nw = 0
+      for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1); nx = substr(s, i + 1, 1)
+        if (q == "\047") { if (c == "\047") q = ""; else w = w c; continue }
+        if (q == "\"") {
+          if (c == "\"") { q = ""; continue }
+          if (c == "`" || (c == "$" && nx == "(")) flag("subst")
+          if (c == "\\" && (nx == "$" || nx == "`" || nx == "\"" || nx == "\\")) { w = w nx; i++; continue }
+          if (c == "\\" && nx == "\n") { i++; continue }
+          w = w c; continue
+        }
+        if (c == "\\") { flag("backslash"); i++; if (nx != "\n") { w = w nx; hw = 1 } continue }
+        if (c == "\047" || c == "\"") { if (c == "\047" && substr(s, i - 1, 1) == "$") flag("ansi"); q = c; hw = 1; continue }
+        if (c == "`") { flag("subst"); endseg(); continue }
+        if (c == "$" && nx == "(") { flag("subst"); endseg(); i++; continue }
+        if (c == "#" && !hw) { flag("comment"); while (i < n && substr(s, i + 1, 1) != "\n") i++; continue }
+        if (c == " " || c == "\t") { endword(); continue }
+        if (c == ";" || c == "&" || c == "|" || c == "(" || c == ")" || c == "\n") { endseg(); continue }
+        if (c == "<" || c == ">") { flag("redirect"); if (nx == "(") flag("subst"); endword(); continue }
+        w = w c; hw = 1
+      }
+      if (q != "") flag("unterminated")
+      endseg()
+      for (f in flags) print "\001" f
+    }'
+}
+
+# True when a Bash command runs `git commit`, and prints the commit as the shell runs
+# it (the commit's simple commands, quotes removed, words joined by spaces; the whole
+# command where the text rule decides), for checks on the commit's flags. A simple
+# command with a word `git` (any path, any position, so `env git commit` and
+# `git -C dir commit` count) and a later word naming commit (`commit`,
+# `alias.ci=commit`) is a commit. Words are taken after quote removal, so prose that
+# only mentions a commit inside a quoted argument (`printf '...git status... commit'`,
+# `--question "...git commit..."`) is not. Config given with the command can make a
+# subcommand that is not a long-standing git builtin an alias for commit
+# (git_name_can_alias). It counts as a commit when git runs such a subcommand
+# and the config either defines an alias whose value names commit or starts with `!`
+# (`git -c alias.ci='commit -am x' ci`, GIT_CONFIG_PARAMETERS) or hides the value
+# (--config-env=alias.*, GIT_CONFIG_GLOBAL/SYSTEM/COUNT/KEY_n/VALUE_n, GIT_CONFIG,
+# a value in a $variable or $'...'), in the same simple command or an earlier
+# `export`. So `GIT_CONFIG_GLOBAL=x git log` is not a commit. `git` is matched in
+# any letter case: a case-insensitive disk runs `GIT commit`. Setting such an alias
+# for later (`git config alias.ci 'commit -m x'`, or a `!` value) counts as a commit
+# too; an alias already in a config file does not. Where the text can run more
+# than it shows, the plain-text rule decides instead (any `git` followed later by
+# `commit`): a command substitution, a variable as the command word,
+# eval/xargs/source/watch/parallel, an interpreter given code with -c/-e, read from
+# stdin, or given something that is not a file path.
+git_commit_text() {
+  local cmd="$1" out verdict
+  if [ "${#cmd}" -le 65536 ]; then
+    out=$(shell_segments "$cmd" | awk -F'\037' '
+      function base(x) { sub(/.*\//, "", x); return x }
+      function names_commit(x) { return x ~ /(^|[^A-Za-z0-9_])commit([^A-Za-z0-9_]|$)/ }
+      # The value of an alias.NAME=VALUE word runs a commit (or anything, with `!`).
+      function alias_commits(x,  v) { v = x; sub(/^.*[Aa][Ll][Ii][Aa][Ss]\.[^=]*=/, "", v); return names_commit(v) || v ~ /^!/ }
+      /^\001subst$/ { fb = 1; next }
+      # $'...' can spell an alias value the text does not show.
+      /^\001ansi$/ { opaque = 1; next }
+      /^\001/ { next }
+      {
+        k = 1
+        while (k < NF && $k ~ /^[A-Za-z_][A-Za-z0-9_]*=/) k++
+        if ($k ~ /\$/ || $k == ".") fb = 1
+        g = 0; seghit = 0; line = ""
+        for (j = 1; j <= NF; j++) {
+          b = base($j); line = line (j > 1 ? " " : "") $j
+          if (b ~ /^(eval|xargs|source|watch|parallel)$/) fb = 1
+          if (b ~ /^(bash|sh|zsh|dash|ksh|fish|python[0-9.]*|perl|ruby|node|php|lua|osascript|pwsh|tclsh|deno|bun)$/) {
+            arg = ""
+            for (m = j + 1; m <= NF; m++) {
+              if ($m == "-" || $m ~ /^-[A-Za-z]*[ceE][A-Za-z]*$/ || $m ~ /^--(command|eval|exec)/) fb = 1
+              if (arg == "" && $m !~ /^-/) arg = $m
+            }
+            if (arg == "" || arg !~ /[\/.]/) fb = 1
+          }
+          # Config in a variable, here or in an earlier export.
+          if ($j ~ /^GIT_CONFIG(_GLOBAL|_SYSTEM|_COUNT|_KEY_[0-9]+|_VALUE_[0-9]+)?=/) opaque = 1
+          if ($j ~ /^GIT_CONFIG_PARAMETERS=/ && $j ~ /\$/) opaque = 1
+          if ($j ~ /^GIT_CONFIG_PARAMETERS=/ && tolower($j) ~ /alias\./) { if (alias_commits($j)) cfgc = 1; else opaque = 1 }
+          # GIT, Git, /usr/bin/GIT: a case-insensitive disk runs git for each.
+          if (tolower(b) == "git" && !g) { g = 1; gi = j }
+          else if (g && $j !~ /[ \t]/ && names_commit($j)) seghit = 1
+        }
+        if (g) {
+          # The subcommand: the first word after git and its global options.
+          m = gi + 1
+          while (m <= NF && $m ~ /^-/) { if ($m ~ /^(-C|-c|--git-dir|--work-tree|--namespace|--config-env|--super-prefix|--attr-source)$/) m++; m++ }
+          sc = (m <= NF ? $m : "")
+          # Each (git, subcommand) pair once: a long chain asks git once per pair.
+          if (sc != "" && !((gw = $gi "\037" sc) in seen)) { seen[gw] = 1; scs = scs (scs == "" ? "" : "\036") gw }
+          for (m = gi + 1; m <= NF; m++) {
+            lw = tolower($m)
+            if (lw ~ /^--config-env=alias\./ || (lw == "--config-env" && tolower($(m + 1)) ~ /^alias\./)) opaque = 1
+            # A value in a variable: -c "$KV", alias.x="$V", --config-env=$X.
+            if (($m == "-c" || $m == "--config-env") && $(m + 1) ~ /\$/) opaque = 1
+            if ((lw ~ /^alias\.[^=]*=/ || lw ~ /^--config-env=/) && $m ~ /\$/) opaque = 1
+            if (lw ~ /^alias\.[^=]*=/ && alias_commits($m)) cfgc = 1
+            # git config [opts] alias.NAME VALUE: an alias for later that commits.
+            if (sc == "config" && lw ~ /^alias\.[^=]*$/ && m < NF && (names_commit($(m + 1)) || $(m + 1) ~ /^!/)) seghit = 1
+          }
+        }
+        if (seghit) { hit = 1; text = text line "\n" }
+        if (g) gtext = gtext line "\n"
+      }
+      END {
+        if (fb) print "fallback"
+        else if (hit) printf "commit\n%s", text
+        else if ((cfgc || opaque) && scs != "") printf "cfg\n%s\n%s", scs, gtext
+        else print "none"
+      }')
+    verdict="${out%%$'\n'*}"
+  else
+    verdict=fallback
+  fi
+  case "$verdict" in
+    commit) printf '%s\n' "${out#*$'\n'}"; return 0 ;;
+    none) return 1 ;;
+    cfg)
+      # Config that can define an alias: a commit when git runs a subcommand that
+      # an alias could be (git_name_can_alias).
+      local rest scs text pair
+      rest="${out#*$'\n'}"; scs="${rest%%$'\n'*}"; text="${rest#*$'\n'}"
+      while IFS= read -r pair; do
+        git_name_can_alias "${pair#*$'\037'}" "${pair%%$'\037'*}" && { printf '%s\n' "$text"; return 0; }
+      done <<< "$(printf '%s' "$scs" | tr '\036' '\n')"
+      return 1 ;;
+    *) grep -qE '\b[Gg][Ii][Tt]\b.*\bcommit\b' <<< "$cmd" && printf '%s\n' "$cmd" ;;
+  esac
+}
+
+# Builtins that every git in use is assumed to have: every name is a builtin in git
+# 2.25.0 and later (checked against git.c's command table at v2.25.0 and v2.30.0).
+# A newer builtin (backfill, diagnose, diff-pairs, for-each-repo, history, hook,
+# last-modified, maintenance, refs, replay, repo, ...) and one that was a script or
+# a separate program until recently (bisect, fast-import, credential-cache,
+# credential-store, upload-pack, upload-archive, ...) is left out, so an older git
+# the agent runs by path cannot turn it into an alias.
+GIT_BASELINE_BUILTINS="add am annotate apply archive blame branch bundle cat-file check-attr check-ignore check-mailmap check-ref-format checkout checkout-index cherry cherry-pick clean clone column commit commit-graph commit-tree config count-objects credential describe diff diff-files diff-index diff-tree difftool fast-export fetch fetch-pack fmt-merge-msg for-each-ref format-patch fsck fsck-objects gc grep hash-object help index-pack init init-db interpret-trailers log ls-files ls-remote ls-tree mailinfo mailsplit merge merge-base merge-file merge-index merge-ours merge-recursive merge-subtree merge-tree mktag mktree multi-pack-index mv name-rev notes pack-objects pack-redundant pack-refs patch-id prune prune-packed pull push range-diff read-tree rebase receive-pack reflog remote repack replace rerere reset restore rev-list rev-parse revert rm send-pack shortlog show show-branch show-index show-ref sparse-checkout stage stash status stripspace switch symbolic-ref tag unpack-file unpack-objects update-index update-ref update-server-info var verify-commit verify-pack verify-tag version whatchanged worktree write-tree"
+
+# Load into _GB the builtins of a git, $1 being the command's git word: an absolute
+# path to an executable is asked itself; a relative path (./git, sub/git, ~/bin/git)
+# names a binary the hook does not resolve, so _GB is left empty (every subcommand
+# aliasable); a bare name asks the git on the hook's PATH. Each is asked once per
+# hook run (no subshell, so the cache holds). _GB is empty when that git runs but
+# cannot list them, "nogit" when no git runs at all.
+_git_builtins_load() {
+  local g="$1"
+  case "$g" in
+    /*) [ -x "$g" ] || g=git ;;
+    */*) _GB=""; return 0 ;;
+    *) g=git ;;
+  esac
+  if [ "$g" = git ] && [ -n "${_GB_PATH+x}" ]; then _GB="$_GB_PATH"; return 0; fi
+  if [ "$g" != git ] && [ "${_GB_ABS_FOR:-}" = "$g" ]; then _GB="$_GB_ABS"; return 0; fi
+  if _GB=$("$g" --list-cmds=builtins 2>/dev/null) && [ -n "$_GB" ]; then
+    :
+  elif "$g" --version >/dev/null 2>&1; then
+    _GB=""
+  else
+    _GB=nogit
+  fi
+  if [ "$g" = git ]; then _GB_PATH="$_GB"; else _GB_ABS_FOR="$g"; _GB_ABS="$_GB"; fi
+  return 0
+}
+
+# True when `git NAME` could run an alias, $2 being the command's git word. NAME is
+# taken as a builtin, which no alias can shadow, only when it is both in
+# GIT_BASELINE_BUILTINS and a builtin of that git. Whether an installed git-NAME
+# shadows an alias depends on PATH, GIT_EXEC_PATH and --exec-path when the command
+# runs, which the command can change, so externals never count. A git that runs
+# but cannot list its builtins makes every name aliasable (fail strict); with no
+# working git the baseline alone decides.
+git_name_can_alias() {
+  local sc="$1"
+  [ -n "$sc" ] || return 1
+  case " $GIT_BASELINE_BUILTINS " in *" $sc "*) ;; *) return 0 ;; esac
+  _git_builtins_load "${2:-git}"
+  [ "$_GB" = nogit ] && return 1
+  grep -qxF -- "$sc" <<< "$_GB" && return 1
+  return 0
+}
+
+# True when a Bash command runs `git commit` (git_commit_text, without the text).
+command_runs_git_commit() { git_commit_text "$1" >/dev/null; }
+
+# True when every simple command in a Bash command only reads, or stages files with a
+# plain `git add` (staging copies what is on disk into the index; it changes no file
+# in the working tree, so a framework-written .claude file can be staged for commit
+# while writing it stays blocked). Allowed: cd with one argument; cat, head, tail,
+# more, wc, file, stat, ls, grep, jq, echo, pwd, true; rg without --pre; sed -n with
+# a line-range print script (`1,15p`); git diff/log/show/blame/status/ls-files/
+# ls-tree/cat-file/rev-parse/reflog/describe/name-rev/grep/check-ignore without
+# --output, --ext-diff or --textconv, which run configured drivers (and git grep
+# without -O); git add with no option but `--`. Anything the
+# split cannot follow refuses: substitution, a backslash, a comment, $'...', an open
+# quote, and any redirection except fd duplication (2>&1) and /dev/null.
+command_only_reads() {
+  local cmd="$1" prev=""
+  [ "${#cmd}" -le 16384 ] || return 1
+  case "$cmd" in *\\*) return 1 ;; esac
+  while [ "$cmd" != "$prev" ]; do
+    prev="$cmd"
+    cmd=$(sed -E 's#(^|[[:space:]])[0-9]?(>&[0-9]|>>?[[:space:]]*/dev/null)([[:space:];&|)]|$)#\1\3#g' <<< "$cmd")
+  done
+  [ "$(shell_segments "$cmd" | awk -F'\037' '
+    /^\001/ { bad = 1; next }
+    {
+      ok = 0; c = $1
+      if (c == "cd") ok = (NF <= 2)
+      else if (c ~ /^(cat|head|tail|more|wc|file|stat|ls|grep|jq|echo|pwd|true)$/) ok = 1
+      else if (c == "rg") { ok = 1; for (j = 2; j <= NF; j++) if ($j ~ /^--pre(=|$)/) ok = 0 }
+      else if (c == "sed") {
+        ok = ($2 == "-n" && $3 ~ /^([0-9]+|\$)(,([0-9]+|\$))?p$/)
+        for (j = 4; j <= NF; j++) if ($j ~ /^-/) ok = 0
+      }
+      else if (c == "git" && $2 ~ /^(diff|log|show|blame|status|ls-files|ls-tree|cat-file|rev-parse|reflog|describe|name-rev|grep|check-ignore)$/) {
+        ok = 1
+        for (j = 3; j <= NF; j++) {
+          if ($j ~ /^--output/ || $j ~ /^--(ext-diff|textconv)$/) ok = 0
+          if ($2 == "grep" && ($j ~ /^--open-files-in-pager/ || $j ~ /^-[A-Za-z0-9]*O/)) ok = 0
+        }
+      }
+      else if (c == "git" && $2 == "add") { ok = 1; for (j = 3; j <= NF; j++) if ($j ~ /^-/ && $j != "--") ok = 0 }
+      if (!ok) bad = 1
+    }
+    END { print (bad || NR == 0 ? "no" : "yes") }')" = yes ]
 }
 
 # True when COMMAND is a lone invocation of the project's own mark-evaluated.sh or

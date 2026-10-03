@@ -239,6 +239,21 @@ test_markers_survive_non_commit() {
   teardown_test_project
 }
 
+# --- Test (dogfood-2 row 15): after an out-of-band commit moved HEAD, a command that
+# only mentions a commit in its text does not clear the markers; only a commit does ---
+test_commit_word_in_text_keeps_markers() {
+  setup_test_project
+  git -C "$TEST_DIR" rev-parse HEAD > "/tmp/.claude_last_head_${TEST_HASH}"
+  touch "/tmp/.claude_superpowers_${TEST_HASH}"
+  echo x >> "$TEST_DIR/README.md"
+  git -C "$TEST_DIR" commit -qam "made at the user's own prompt"
+  INPUT=$(jq -c --arg cmd 'printf "%s\n" "- git status clean; the commit was made by the user" >> notes.md' '.tool_input.command=$cmd' "$FIXTURE_BASH")
+  run_hook "$HOOK" "$INPUT" >/dev/null 2>&1
+  assert_file_exists "/tmp/.claude_superpowers_${TEST_HASH}" "text mentioning a commit keeps the superpowers marker"
+  rm -f "/tmp/.claude_last_head_${TEST_HASH}"
+  teardown_test_project
+}
+
 # --- Test: chained commit still clears markers when HEAD moved ---
 test_chained_commit_clears_markers() {
   setup_test_project
@@ -297,6 +312,7 @@ test_ignores_skill_tool_for_c7
 test_successful_commit_clears_markers
 test_failed_commit_keeps_markers
 test_markers_survive_non_commit
+test_commit_word_in_text_keeps_markers
 test_chained_commit_clears_markers
 test_sync_marker_created_when_not_interrupted
 

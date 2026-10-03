@@ -197,12 +197,13 @@ test_allows_git_blame_manifest() {
   teardown_test_project
 }
 
-# --- Test: blocks git add on manifest.json (mutating) ---
-test_blocks_git_add_manifest() {
+# --- Test: allows git add on manifest.json (staging copies the file into the index and
+# changes nothing on disk; the framework's own steps ask for it — dogfood-2 row 23) ---
+test_allows_git_add_manifest() {
   setup_test_project
   INPUT='{"tool_name":"Bash","tool_input":{"command":"git add .claude/manifest.json"}}'
   EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
-  assert_exit_code "2" "$EXIT_CODE" "should block git add on manifest.json"
+  assert_exit_code "0" "$EXIT_CODE" "should allow git add on manifest.json"
   teardown_test_project
 }
 
@@ -524,8 +525,8 @@ test_blocks_read_only_word_with_payload() {
     EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd")")
     assert_exit_code "2" "$EXIT_CODE" "must stay blocked: $cmd"
   done
-  RESULT=$(run_hook "$HOOK" "$(cg_input 'cat .claude/settings.json | jq .')")
-  assert_contains "$RESULT" "single command" "the block message says read-only inspection must be a single command"
+  RESULT=$(run_hook "$HOOK" "$(cg_input 'cat .claude/settings.json | tee /tmp/x')")
+  assert_contains "$RESULT" "chain only read-only commands" "the block message says what inspection may chain"
   for cmd in 'cat .claude/settings.json' 'rg -n x .claude/settings.json' \
              'git log --oneline -- .claude/manifest.json' 'grep -c x .claude/manifest.json' \
              'git log -SOops -- .claude/manifest.json'; do
@@ -790,6 +791,123 @@ test_blocks_mark_plan_closed_name_tail() {
   teardown_test_project
 }
 
+# Hook input in the shape Claude Code sends: session keys, the transcript under
+# ~/.claude/projects, the agent's cwd. $2 is the cwd.
+cg_real_input() {
+  jq -nc --arg c "$1" --arg d "$2" --arg t "$HOME/.claude/projects/x/s.jsonl" \
+    '{session_id:"s",transcript_path:$t,cwd:$d,permission_mode:"auto",hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c,description:"x"}}'
+}
+
+# A project whose path has a space, as the dogfood project had; sets PROJ.
+setup_spaced_project() {
+  setup_test_project
+  PROJ="$TEST_DIR/Claude Projects/k-pdf dogfood"
+  mkdir -p "$PROJ/.claude/framework/hooks"
+  cp "$TEST_DIR/.claude/manifest.json" "$PROJ/.claude/"
+  export CLAUDE_PROJECT_DIR="$PROJ"
+}
+
+# --- Test (dogfood-2 rows 7, 13): read-only inspection of .claude passes when every
+# command in the chain only reads — the exact dogfood commands included ---
+test_allows_read_only_chains() {
+  local cmd
+  setup_spaced_project
+  while IFS= read -r cmd; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input "$cmd" "$PROJ")")
+    assert_exit_code "0" "$EXIT_CODE" "read-only chain must be allowed: $cmd"
+  done << 'CMDS'
+ls .claude .claude/framework; jq . .claude/manifest.json
+cd "$HOME/Documents/Claude Projects/k-pdf-dogfood-2" && ls -l .git/hooks | grep -v sample; ls .claude .claude/framework | head -20; jq . .claude/manifest.json | head -20; sed -n 1,15p .github/workflows/ci.yml; ls -d .venv; git check-ignore .venv; ls *.md
+cd "$HOME/Documents/Claude Projects/k-pdf-dogfood-2" && git status --short; git diff --stat | tail -12; git diff -- .claude/manifest.json | head -40; head -8 PROJECT_INTAKE.md
+git show HEAD:.claude/settings.json
+git show HEAD:.claude/settings.json 2>/dev/null | jq .permissions 2>&1
+git ls-tree -r --name-only HEAD .claude/framework/hooks/ | wc -l
+CMDS
+  teardown_test_project
+}
+
+# --- Test (dogfood-2 row 23): plain git add of framework-written .claude files passes,
+# alone or chained, so the framework's own "stage these files" steps can run ---
+test_allows_git_add_staging() {
+  local cmd
+  setup_spaced_project
+  while IFS= read -r cmd; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input "$cmd" "$PROJ")")
+    assert_exit_code "0" "$EXIT_CODE" "staging must be allowed: $cmd"
+  done << 'CMDS'
+cd "$HOME/Documents/Claude Projects/k-pdf-dogfood-2" && git add .claude/manifest.json && git add .claude/process-state.json && git add .claude/intake-progress.json && git add .claude/bypass-audit.json && git add .claude/adoption/assessment-record.json && git add .claude/adoption/verdict.md && git add CLAUDE.md && git add FEATURES.md && git add RELEASE_NOTES.md && git add docs/phase-0/adoption-plan.md && git status --short
+git add -- .claude/settings.json .claude/framework/hooks/config-guard.sh
+CMDS
+  teardown_test_project
+}
+
+# --- Test: a chain that writes, executes or cannot be followed stays blocked, and so
+# does git add with an option (--chmod changes the committed mode, -f, -p) ---
+test_blocks_unsafe_chains() {
+  local cmd
+  setup_spaced_project
+  while IFS= read -r cmd; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input "$cmd" "$PROJ")")
+    assert_exit_code "2" "$EXIT_CODE" "must stay blocked: $cmd"
+  done << 'CMDS'
+git add --chmod=-x .claude/framework/hooks/config-guard.sh
+git add -f .claude/settings.local.json
+git add .claude/manifest.json && git checkout -- .claude/settings.json
+ls .claude/settings.json && cp /dev/null .claude/settings.json
+cat .claude/settings.json | tee .claude/framework/hooks/x.sh
+jq . .claude/manifest.json > .claude/settings.json
+jq . .claude/manifest.json >> /tmp/x
+cat .claude/settings.json | bash
+sed -n 1w.claude/settings.json .claude/manifest.json
+sed -i 1d .claude/settings.json
+git diff --output=.claude/settings.json; ls
+cat $(echo .claude/settings.json)
+ls .claude/settings.json &>/dev/null
+cd .claude/framework/hooks && cp /tmp/x config-guard.sh
+X=1 cat .claude/settings.json
+git diff --ext-diff .claude/settings.json
+git log -p --textconv -- .claude/manifest.json
+git show --ext-diff HEAD:.claude/settings.json | head
+CMDS
+  # A quote inside a comment must not hide the next line from the split (the closing
+  # quote is in a second comment, so the text alone looks like one quoted word).
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input "ls .claude # it's
+cp /dev/null .claude/settings.json # it's" "$PROJ")")
+  assert_exit_code "2" "$EXIT_CODE" "a comment's quote must not swallow the next line"
+  teardown_test_project
+}
+
+# --- Test (dogfood-2 rows 23, 30): mark-evaluated.sh inside a cd/pipe chain stays
+# blocked (the allowance is a lone command), and the message says how to run it ---
+test_mark_chain_names_lone_form() {
+  local cmd
+  setup_spaced_project
+  for cmd in 'cd "$HOME/Documents/Claude Projects/k-pdf-dogfood-2" && bash .claude/framework/hooks/mark-evaluated.sh "Karl approved design A1 and instructed one commit of the preferences fix (2 files)" 2>&1 | tail -3' \
+             'cd "$HOME/Documents/Claude Projects/k-pdf-dogfood-2" && bash "$CLAUDE_PROJECT_DIR/.claude/framework/hooks/mark-evaluated.sh" "Karl approved A1" 2>&1 | tail -3'; do
+    RESULT=$(run_hook "$HOOK" "$(cg_real_input "$cmd" "$PROJ")")
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input "$cmd" "$PROJ")")
+    assert_exit_code "2" "$EXIT_CODE" "a chained mark-evaluated.sh stays blocked: $cmd"
+    assert_contains "$RESULT" "run only as a lone command from the project root" "the message names the lone form"
+  done
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input 'bash .claude/framework/hooks/mark-evaluated.sh "Karl approved A1"' "$PROJ")")
+  assert_exit_code "0" "$EXIT_CODE" "the lone form from the spaced project root is allowed"
+  teardown_test_project
+}
+
+# --- Test (review): a config-guard newer than its _helpers.sh (a framework sync left
+# half done) refuses a write to a protected file rather than allowing it ---
+test_old_helpers_still_block_writes() {
+  local skew
+  setup_test_project
+  skew=$(mktemp -d)
+  cp "$HOOK_DIR"/*.sh "$skew/"
+  printf '\nunset -f command_only_reads shell_segments\n' >> "$skew/_helpers.sh"
+  EXIT_CODE=$(run_hook_exit_code "$skew/config-guard.sh" "$(cg_input 'git add .claude/manifest.json; cp /dev/null .claude/settings.json')")
+  assert_exit_code "2" "$EXIT_CODE" "an old _helpers.sh must not unblock a write"
+  rm -rf "$skew"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "config-guard.sh"
 test_blocks_write_settings
@@ -812,7 +930,7 @@ test_allows_git_diff_settings
 test_allows_git_log_manifest
 test_allows_git_show_framework_hook
 test_allows_git_blame_manifest
-test_blocks_git_add_manifest
+test_allows_git_add_manifest
 test_blocks_git_checkout_settings
 test_blocks_git_rm_framework_hook
 test_blocks_rm_bare_claude
@@ -857,4 +975,9 @@ test_internal_failure_blocks
 test_without_jq_blocks_framework_calls
 test_blocks_case_variants
 test_blocks_prefixed_sanctioned_name
+test_allows_read_only_chains
+test_allows_git_add_staging
+test_blocks_unsafe_chains
+test_mark_chain_names_lone_form
+test_old_helpers_still_block_writes
 run_tests

@@ -45,7 +45,9 @@ compute_errors() {
 
   if [ "$HAS_SOURCE" = true ]; then
     [ -n "$CHANGELOG" ] && ! echo "$ALL" | grep -q "$CHANGELOG" && errors="${errors}- Source files modified but $CHANGELOG not updated.\n"
-    errors="${errors}- Uncommitted source changes. Commit before finishing.\n"
+    # The commit itself may be waiting on the user (enforce-evaluate needs their
+    # approval first), so name the sentinel that lets the agent stop and ask.
+    errors="${errors}- Uncommitted source changes. Commit before finishing. If the commit is waiting on the user's approval, ask them and record the open question in .claude/pending-approval.json (question, options, recommendation); this check then lets you stop. Delete the file when they answer.\n"
   fi
 
   if [ "$HAS_SOURCE" = false ] && [ -z "$STAGED" ] && [ -n "$SESSION_START" ]; then

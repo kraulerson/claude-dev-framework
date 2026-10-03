@@ -332,14 +332,38 @@ test_generate_settings_permissions() {
 
   # Config deny rule present
   local has_config
-  has_config=$(echo "$out" | jq -r '.permissions.deny | index("Write(/.claude/settings.json)") // empty' 2>/dev/null || echo "")
+  has_config=$(echo "$out" | jq -r '.permissions.deny | index("Edit(/.claude/settings.json)") // empty' 2>/dev/null || echo "")
   TESTS_RUN=$((TESTS_RUN + 1))
   if [ -n "$has_config" ]; then
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
     TESTS_FAILED=$((TESTS_FAILED + 1))
-    FAILURES="${FAILURES}  FAIL: generate: deny contains Write(/.claude/settings.json)\n"
+    FAILURES="${FAILURES}  FAIL: generate: deny contains Edit(/.claude/settings.json)\n"
   fi
+
+  # No Write(path) rule: Claude Code never consults one (Edit(path) covers Write) and
+  # warns about each at startup (dogfood run 1)
+  assert_equals "0" "$(echo "$out" | jq '[.permissions.deny[] | select(startswith("Write("))] | length')" \
+    "generate: no Write(path) deny rule"
+}
+
+# =====================================================================
+# TEST 12b: merge_hooks_into_settings — drops the framework's legacy Write(path)
+# rules from an older install, keeps the user's own
+# =====================================================================
+test_merge_drops_legacy_write_rules() {
+  local tmp settings_json
+  tmp=$(mktemp -d)
+  echo '{"permissions":{"deny":["Write(/.claude/settings.json)","Write(//tmp/.claude_*)","Write(/secrets/**)","WebFetch"]}}' > "$tmp/settings.json"
+  settings_json=$(generate_settings_json session-start marker-guard)
+  merge_hooks_into_settings "$settings_json" "$tmp/settings.json"
+  assert_equals "0" "$(jq '[.permissions.deny[] | select(. == "Write(/.claude/settings.json)" or . == "Write(//tmp/.claude_*)")] | length' "$tmp/settings.json")" \
+    "merge: the framework's legacy Write rules are removed"
+  assert_equals "1" "$(jq '[.permissions.deny[] | select(. == "Write(/secrets/**)")] | length' "$tmp/settings.json")" \
+    "merge: a user's own Write rule is kept"
+  assert_equals "1" "$(jq '[.permissions.deny[] | select(. == "Edit(/.claude/settings.json)")] | length' "$tmp/settings.json")" \
+    "merge: the Edit twin is present"
+  rm -rf "$tmp"
 }
 
 # =====================================================================
@@ -409,5 +433,6 @@ test_skip_plugin_check
 test_context7_declined
 test_generate_settings_matchers
 test_generate_settings_permissions
+test_merge_drops_legacy_write_rules
 test_merge_preserves_user_deny
 run_tests

@@ -89,29 +89,17 @@ if grep -qiE "$CONFIG_GUARD_PROTECTED_RE" <<< "$COMMAND" \
      && is_sanctioned_mark_command "$COMMAND" "$CWD"; then
     guard_allow
   fi
-  # Read-only inspection, as a lone command only: a leading read-only word used to
-  # admit whatever was chained after it (#11).
-  if is_lone_command "$COMMAND"; then
-    # git diff/log/show/blame/status etc. (BL-021) — mutating subcommands (add, checkout,
-    # restore, rm, mv, commit, stash, reset, clean, apply, update-ref) are not in this
-    # list. --output writes a file; git grep's -O / --open-files-in-pager runs a command.
-    if grep -qE '^\s*git\s+(diff|log|show|blame|status|ls-files|cat-file|rev-parse|reflog|describe|name-rev|grep)\b' <<< "$COMMAND" \
-       && ! grep -qE '(^|\s)--output' <<< "$COMMAND" \
-       && ! { grep -qE '^\s*git\s+grep\b' <<< "$COMMAND" \
-              && grep -qE '(^|\s)(--open-files-in-pager|-[[:alnum:]]*O)' <<< "$COMMAND"; }; then
-      guard_allow
-    fi
-    # cat, head, tail, more, wc, file, stat, ls, grep; rg without --pre, which runs a
-    # command per file. awk (system()), bat (--pager) and less (-o log file) can
-    # write or execute, so they are not read-only here.
-    if grep -qE '^\s*(cat|head|tail|more|wc|file|stat|ls|grep)\s' <<< "$COMMAND"; then
-      guard_allow
-    fi
-    if grep -qE '^\s*rg\s' <<< "$COMMAND" && ! grep -qE '(^|\s)--pre(=|\s|$)' <<< "$COMMAND"; then
-      guard_allow
-    fi
+  # Read-only inspection and plain `git add` staging, alone or chained, when EVERY
+  # simple command in the line qualifies (command_only_reads in _helpers.sh). A leading
+  # read-only word no longer admits whatever is chained after it (#11). awk (system()),
+  # bat (--pager), less (-o log file) and rg --pre can write or execute, so they are
+  # not read-only here.
+  command_only_reads "$COMMAND" && guard_allow
+  MARK_HINT=""
+  if [[ "$COMMAND" == *mark-evaluated.sh* || "$COMMAND" == *mark-plan-closed.sh* ]]; then
+    MARK_HINT=" mark-evaluated.sh and mark-plan-closed.sh run only as a lone command from the project root, with no cd, pipe, redirection or chaining and a plain relative path, e.g.: bash .claude/framework/hooks/mark-evaluated.sh \"what the user approved\""
   fi
-  printf "BLOCKED — Modification of framework files via Bash is not permitted. Framework hooks and configuration are managed by the framework, not by Claude. Read-only inspection must be a single command with no pipe, chaining or redirection; use the Read tool to view these files.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second.\n" >&2
+  printf "BLOCKED — Modification of framework files via Bash is not permitted. Framework hooks and configuration are managed by the framework, not by Claude. Inspection may chain only read-only commands (cat, head, tail, ls, grep, jq, sed -n N,Mp, git diff/log/show/status, cd) and plain git add, with no substitution and no redirection except 2>&1 or /dev/null; use the Read tool to view these files.%s\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second.\n" "$MARK_HINT" >&2
   guard_block
 fi
 
