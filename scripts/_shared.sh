@@ -38,15 +38,19 @@ generate_settings_json() {
 
   # Static defense-in-depth permission rules (R-08). Leading `/` anchors at the
   # project root; `//` is an absolute filesystem path — current Claude Code
-  # permission-rule syntax. Enforced by the harness before hooks run.
+  # permission-rule syntax. Enforced by the harness before hooks run. An Edit(path)
+  # rule covers every built-in tool that writes files (Edit, Write, NotebookEdit);
+  # Claude Code never consults a Write(path) rule and warns about one at startup, so
+  # none is generated (FRAMEWORK_LEGACY_DENY_RULES lists the ones older versions did).
+  # https://code.claude.com/docs/en/permissions ("Read and Edit").
   local deny_rules
   deny_rules=$(jq -n '[
-    "Edit(/.claude/settings.json)",       "Write(/.claude/settings.json)",
-    "Edit(/.claude/settings.local.json)", "Write(/.claude/settings.local.json)",
-    "Edit(/.claude/manifest.json)",       "Write(/.claude/manifest.json)",
-    "Edit(/.claude/framework/**)",        "Write(/.claude/framework/**)",
-    "Edit(//tmp/.claude_*)",              "Write(//tmp/.claude_*)",
-    "Edit(//private/tmp/.claude_*)",      "Write(//private/tmp/.claude_*)"
+    "Edit(/.claude/settings.json)",
+    "Edit(/.claude/settings.local.json)",
+    "Edit(/.claude/manifest.json)",
+    "Edit(/.claude/framework/**)",
+    "Edit(//tmp/.claude_*)",
+    "Edit(//private/tmp/.claude_*)"
   ] | sort')
 
   # Let jq handle all grouping and JSON assembly
@@ -71,6 +75,15 @@ generate_settings_json() {
   '
 }
 
+# The Write(path) deny rules earlier framework versions generated beside their
+# Edit(path) twins. A merge removes exactly these, so a refreshed install stops
+# carrying rules Claude Code ignores; a user's own deny rules are kept.
+FRAMEWORK_LEGACY_DENY_RULES='[
+  "Write(/.claude/settings.json)", "Write(/.claude/settings.local.json)",
+  "Write(/.claude/manifest.json)", "Write(/.claude/framework/**)",
+  "Write(//tmp/.claude_*)", "Write(//private/tmp/.claude_*)"
+]'
+
 # Merge generated hooks into an existing settings.json, preserving other keys.
 # Usage: merge_hooks_into_settings hooks_json settings_file
 merge_hooks_into_settings() {
@@ -82,9 +95,10 @@ merge_hooks_into_settings() {
   if [ -f "$settings_file" ] && jq '.' "$settings_file" >/dev/null 2>&1; then
     local existing
     existing=$(cat "$settings_file")
-    echo "$existing" | jq --argjson h "$hooks_part" --argjson d "$perms_part" '
+    echo "$existing" | jq --argjson h "$hooks_part" --argjson d "$perms_part" \
+        --argjson legacy "$FRAMEWORK_LEGACY_DENY_RULES" '
       . + {hooks: $h}
-      | .permissions = ((.permissions // {}) | .deny = (((.deny // []) + $d) | unique | sort))
+      | .permissions = ((.permissions // {}) | .deny = (((.deny // []) - $legacy + $d) | unique | sort))
     ' > "${settings_file}.tmp"
     mv "${settings_file}.tmp" "$settings_file"
   else

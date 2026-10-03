@@ -184,6 +184,26 @@ test_directive_names_sanctioned_scripts() {
 }
 
 # --- Run all tests ---
+# --- Test (dogfood-2 row 27): the Superpowers status reads the settings this session
+# uses — $CLAUDE_CONFIG_DIR when set — and the warning gives the install command ---
+test_superpowers_status_follows_config_dir() {
+  local cfg
+  setup_test_project
+  cfg=$(mktemp -d)
+  mkdir -p "$HOME/.claude"
+  echo '{"enabledPlugins":{"superpowers@claude-plugins-official":true}}' > "$HOME/.claude/settings.json"
+  export CLAUDE_CONFIG_DIR="$cfg"
+  RESULT=$(run_hook "$HOOK" '{"source":"startup"}')
+  assert_contains "$RESULT" "Superpowers MISSING" "~/.claude does not count when CLAUDE_CONFIG_DIR points elsewhere"
+  assert_contains "$RESULT" "claude plugin install --scope user superpowers@claude-plugins-official" "the warning gives the install command"
+  echo '{"enabledPlugins":{"superpowers@claude-plugins-official":true}}' > "$cfg/settings.json"
+  RESULT=$(run_hook "$HOOK" '{"source":"startup"}')
+  assert_contains "$RESULT" "Superpowers verified" "enabled under CLAUDE_CONFIG_DIR is verified"
+  unset CLAUDE_CONFIG_DIR
+  rm -rf "$cfg" "$HOME/.claude/settings.json"
+  teardown_test_project
+}
+
 echo "session-start.sh (v4 rewrite)"
 test_has_directive
 test_has_zones
@@ -201,4 +221,5 @@ test_clear_clears_plan_closed
 test_resume_preserves_plan_closed
 test_compact_preserves_plan_closed
 test_directive_names_sanctioned_scripts
+test_superpowers_status_follows_config_dir
 run_tests

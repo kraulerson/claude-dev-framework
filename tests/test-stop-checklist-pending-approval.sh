@@ -94,6 +94,28 @@ test_clean_tree_sentinel_silent() {
   teardown_test_project
 }
 
+# --- Test (dogfood-2 row 21): the uncommitted-source block names the route out when
+# the commit waits on the user — the pending-approval sentinel — and that route works ---
+test_block_names_pending_approval_route() {
+  setup_test_project
+  echo "// dirty" > "$TEST_DIR/feature.kt"
+  git -C "$TEST_DIR" add feature.kt
+
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  REASON=$(echo "$RESULT" | jq -r '.reason // empty' 2>/dev/null)
+  assert_contains "$REASON" "Uncommitted source" "still asks for the commit"
+  assert_contains "$REASON" "waiting on the user's approval" "says what to do when the commit waits on approval"
+  assert_contains "$REASON" ".claude/pending-approval.json" "names the sentinel file"
+
+  write_valid_sentinel
+  # Drop the dedup record, so silence below comes from the sentinel, not from the
+  # same error set having been shown once already.
+  rm -f /tmp/.claude_stop_errors_hash_${TEST_HASH}_*
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  assert_not_contains "$RESULT" "block" "following the route lets the agent stop: no block once the question is recorded"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "stop-checklist pending-approval"
 test_dirty_tree_valid_sentinel_silent
@@ -101,4 +123,5 @@ test_dirty_tree_malformed_sentinel_silent
 test_dirty_tree_empty_sentinel_silent
 test_dirty_tree_no_sentinel_blocks
 test_clean_tree_sentinel_silent
+test_block_names_pending_approval_route
 run_tests

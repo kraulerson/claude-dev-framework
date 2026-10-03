@@ -236,6 +236,20 @@ MANIFEST
   teardown_test_project
 }
 
+# --- Test (dogfood-2 row 15): text that only mentions a commit runs no gate ---
+test_commit_word_in_text_runs_no_gate() {
+  setup_test_project
+  jq '.projectConfig._base.verificationGates = [{"name":"always-fail","command":"exit 1","failOn":"exit_code","enabled":true}]' \
+    "$TEST_DIR/.claude/manifest.json" > "$TEST_DIR/m.json" && mv "$TEST_DIR/m.json" "$TEST_DIR/.claude/manifest.json"
+  INPUT=$(jq -nc --arg c 'echo "git status is clean; commit after review" >> notes.md' '{tool_input:{command:$c}}')
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "0" "$EXIT_CODE" "a mention of git and commit in text runs no gate"
+  INPUT='{"tool_input":{"command":"git commit -m \"test\""}}'
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "a real commit still runs the failing gate"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "verification-gate.sh"
 test_non_commit_passes
@@ -246,4 +260,5 @@ test_failing_gate_stderr
 test_disabled_gate_skipped
 test_missing_command_skips
 test_chained_commit_triggers_gate
+test_commit_word_in_text_runs_no_gate
 run_tests

@@ -59,13 +59,12 @@ if ! check_jq; then
 fi
 
 # Superpowers
+# Read where this session's settings live ($CLAUDE_CONFIG_DIR when set), so a
+# separate config folder is not reported from ~/.claude's plugins.
 SP_STATUS="verified"
-if [ -f "$HOME/.claude/settings.json" ] && check_jq; then
-  SP=$(jq -r '.enabledPlugins["superpowers@claude-plugins-official"] // false' "$HOME/.claude/settings.json" 2>/dev/null || echo "false")
-  if [ "$SP" != "true" ]; then
-    SP_STATUS="MISSING"
-    WARNINGS="${WARNINGS}\n  ! Superpowers plugin NOT installed. Run: claude > /plugins > search superpowers > install"
-  fi
+if check_jq && ! superpowers_enabled; then
+  SP_STATUS="MISSING"
+  WARNINGS="${WARNINGS}\n  ! Superpowers plugin NOT installed; source edits stay blocked until it is. Install: claude plugin install --scope user superpowers@claude-plugins-official (then start a new session)"
 fi
 
 # Context7

@@ -80,7 +80,7 @@ case "$TOOL" in
     # Success = HEAD moved since the last recorded position. A failed commit
     # leaves HEAD unchanged, so markers survive. If last_head is missing
     # (first commit this session), fail toward clearing — stricter, not looser.
-    if echo "$COMMAND" | grep -qE '\bgit\b.*\bcommit\b'; then
+    if command_runs_git_commit "$COMMAND"; then
       LAST_HEAD_FILE="/tmp/.claude_last_head_${HASH}"
       CURRENT_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "")
       LAST_HEAD=$(cat "$LAST_HEAD_FILE" 2>/dev/null || echo "")

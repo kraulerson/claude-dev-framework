@@ -125,7 +125,7 @@ Block messages explicitly list and forbid the observed bypass patterns:
 
 ```
 Do NOT present a text evaluation as a substitute.
-Do NOT ask the user if you should proceed without brainstorming.
+Do NOT ask the user if you should proceed without the skill.
 Do NOT skip this because the change seems simple.
 Do NOT create the marker manually.
 ```
@@ -149,7 +149,7 @@ At session end, if commits were made but no superpowers marker exists, an adviso
 ### Layer 10 — Native Permission Rules
 **File:** `permissions.deny` in the generated `.claude/settings.json` (built by `scripts/_shared.sh`)
 
-A static `permissions.deny` block is emitted into every generated settings file. It denies `Edit`/`Write` on `.claude/settings.json`, `.claude/settings.local.json`, `.claude/manifest.json`, and `.claude/framework/**`, plus the marker paths `/tmp/.claude_*` and `/private/tmp/.claude_*`.
+A static `permissions.deny` block is emitted into every generated settings file. It denies `Edit` on `.claude/settings.json`, `.claude/settings.local.json`, `.claude/manifest.json`, and `.claude/framework/**`, plus the marker paths `/tmp/.claude_*` and `/private/tmp/.claude_*`. An `Edit(path)` rule covers every built-in tool that writes files (Edit, Write, NotebookEdit); Claude Code never consults a `Write(path)` rule and warns about each one at startup (https://code.claude.com/docs/en/permissions, "Read and Edit"; v2.1.210 and later), so none is generated, and a sync removes the `Write(...)` twins earlier versions wrote (a user's own deny rules are kept).
 
 **Why native rules:** Deny rules are evaluated by the Claude Code harness itself, before hooks run, and cannot be overridden by allow rules. They cover Claude's own file tools and the file commands Claude Code recognizes inside Bash. This is a defense-in-depth layer under config-guard/marker-guard (Layers 4 and 9), not a replacement for them.
 

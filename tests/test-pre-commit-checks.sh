@@ -55,10 +55,26 @@ test_chained_commit_triggers_checks() {
   teardown_test_project
 }
 
+# --- Test (dogfood-2 row 15): with source staged, text that only mentions a commit is
+# not a commit and is not checked ---
+test_commit_word_in_text_not_checked() {
+  setup_test_project
+  jq '.projectConfig._base.changelogFile = "CHANGELOG.md"' "$TEST_DIR/.claude/manifest.json" > "$TEST_DIR/.claude/manifest.json.tmp"
+  mv "$TEST_DIR/.claude/manifest.json.tmp" "$TEST_DIR/.claude/manifest.json"
+
+  echo "// code" > "$TEST_DIR/app.kt"
+  git -C "$TEST_DIR" add app.kt
+  INPUT=$(jq -nc --arg c 'printf "%s\n" "git status: app.kt staged; commit waits for approval" >> notes.md' '{tool_input:{command:$c}}')
+  EXIT=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "0" "$EXIT" "a mention of git and commit in text is not checked"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "pre-commit-checks.sh"
 test_non_commit_passes
 test_doc_only_passes
 test_source_without_changelog_blocks
 test_chained_commit_triggers_checks
+test_commit_word_in_text_not_checked
 run_tests
