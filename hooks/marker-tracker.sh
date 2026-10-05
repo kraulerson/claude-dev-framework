@@ -85,6 +85,18 @@ case "$TOOL" in
       CURRENT_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "")
       LAST_HEAD=$(cat "$LAST_HEAD_FILE" 2>/dev/null || echo "")
       if [[ -n "$CURRENT_HEAD" && "$CURRENT_HEAD" != "$LAST_HEAD" ]]; then
+        # Approval design B: record whether the commit's tree is the one the user approved.
+        # A git hook that was present (and shown) at approval time can still change the
+        # stage during the commit; that is caught here and surfaced by stop-checklist.
+        APPROVED_TREE=$(jq -r '.tree // empty' "/tmp/.claude_evaluated_${HASH}" 2>/dev/null || echo "")
+        if [ -n "$APPROVED_TREE" ]; then
+          COMMITTED_TREE=$(git rev-parse 'HEAD^{tree}' 2>/dev/null || echo "")
+          mkdir -p "${CLAUDE_PROJECT_DIR:-.}/.claude"
+          jq -nc --arg c "$CURRENT_HEAD" --arg a "$APPROVED_TREE" --arg t "$COMMITTED_TREE" \
+            --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{event: "commit", commit: $c, approved_tree: $a, committed_tree: $t, matched: ($a == $t), at: $now}' \
+            >> "${CLAUDE_PROJECT_DIR:-.}/.claude/approvals.jsonl" 2>/dev/null || true
+        fi
         rm -f "/tmp/.claude_evaluated_${HASH}"
         rm -f "/tmp/.claude_superpowers_${HASH}"
         rm -f "/tmp/.claude_plan_active_${HASH}"

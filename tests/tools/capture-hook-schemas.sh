@@ -19,11 +19,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FIXTURE_DIR="$(cd "$SCRIPT_DIR/../fixtures" && pwd)"
 POST_FIXTURE="$FIXTURE_DIR/posttooluse-bash.json"
 STOP_FIXTURE="$FIXTURE_DIR/stop.json"
+UPS_FIXTURE="$FIXTURE_DIR/userpromptsubmit.json"
 
 command -v claude >/dev/null 2>&1 || { echo "ERROR: claude CLI not found on PATH" >&2; exit 1; }
 command -v jq >/dev/null 2>&1     || { echo "ERROR: jq not found on PATH" >&2; exit 1; }
 [ -f "$POST_FIXTURE" ] || { echo "ERROR: missing fixture $POST_FIXTURE" >&2; exit 1; }
 [ -f "$STOP_FIXTURE" ] || { echo "ERROR: missing fixture $STOP_FIXTURE" >&2; exit 1; }
+[ -f "$UPS_FIXTURE" ] || { echo "ERROR: missing fixture $UPS_FIXTURE" >&2; exit 1; }
 
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/cdf-capture.XXXXXX")
 cleanup() { rm -rf "$WORK_DIR"; }
@@ -31,6 +33,7 @@ trap cleanup EXIT
 
 POST_CAPTURE="$WORK_DIR/capture-post.jsonl"
 STOP_CAPTURE="$WORK_DIR/capture-stop.jsonl"
+UPS_CAPTURE="$WORK_DIR/capture-ups.jsonl"
 SETTINGS="$WORK_DIR/settings.json"
 
 ( cd "$WORK_DIR" && git init -q )
@@ -44,6 +47,9 @@ cat > "$SETTINGS" <<EOF
     ],
     "Stop": [
       { "hooks": [ { "type": "command", "command": "cat >> $STOP_CAPTURE" } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "cat >> $UPS_CAPTURE" } ] }
     ]
   }
 }
@@ -88,6 +94,9 @@ compare_keys() {
 compare_keys "PostToolUse top-level"     "$POST_CAPTURE" "$POST_FIXTURE" "keys"
 compare_keys "PostToolUse tool_response" "$POST_CAPTURE" "$POST_FIXTURE" ".tool_response | keys"
 compare_keys "Stop top-level"            "$STOP_CAPTURE" "$STOP_FIXTURE" "keys"
+# scratchpad_dir appears in interactive sessions only (the fixture is an interactive
+# capture, this run is headless), so it is left out of the comparison.
+compare_keys "UserPromptSubmit top-level" "$UPS_CAPTURE" "$UPS_FIXTURE" '[keys[] | select(. != "scratchpad_dir")]'
 
 if [ "$DRIFT" -ne 0 ]; then
   echo "" >&2

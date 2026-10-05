@@ -254,6 +254,32 @@ test_commit_word_in_text_keeps_markers() {
   teardown_test_project
 }
 
+# --- Test (approval design B, spec 9): after a commit the committed tree is compared with
+# the approved one; a git hook that stages more during the commit (C9) shows as
+# matched=false in .claude/approvals.jsonl ---
+test_commit_tree_compared_with_approval() {
+  local mode
+  for mode in clean hooked; do
+    setup_test_project
+    git -C "$TEST_DIR" rev-parse HEAD > "/tmp/.claude_last_head_${TEST_HASH}"
+    echo fix > "$TEST_DIR/fix.py"; echo extra > "$TEST_DIR/extra.py"; git -C "$TEST_DIR" add fix.py
+    if [ "$mode" = hooked ]; then
+      printf '#!/bin/sh\ngit add extra.py\n' > "$TEST_DIR/.git/hooks/pre-commit"; chmod +x "$TEST_DIR/.git/hooks/pre-commit"
+    fi
+    (cd "$TEST_DIR" && env -u CLAUDECODE bash "$HOOK_DIR/mark-evaluated.sh" "approved fix" >/dev/null 2>&1)
+    git -C "$TEST_DIR" commit -qm "fix" >/dev/null 2>&1
+    INPUT=$(jq -c --arg cmd "git commit -m fix" '.tool_input.command=$cmd' "$FIXTURE_BASH")
+    run_hook "$HOOK" "$INPUT" >/dev/null 2>&1
+    REC=$(tail -n 1 "$TEST_DIR/.claude/approvals.jsonl" 2>/dev/null)
+    assert_equals "commit" "$(jq -r .event <<< "$REC" 2>/dev/null)" "$mode: the commit is recorded"
+    assert_equals "$(git -C "$TEST_DIR" rev-parse HEAD)" "$(jq -r .commit <<< "$REC" 2>/dev/null)" "$mode: the record names the commit"
+    assert_equals "$([ "$mode" = clean ] && echo true || echo false)" "$(jq -r .matched <<< "$REC" 2>/dev/null)" "$mode: matched says whether the committed tree is the approved one"
+    assert_file_not_exists "/tmp/.claude_evaluated_${TEST_HASH}" "$mode: the marker is cleared"
+    rm -f "/tmp/.claude_last_head_${TEST_HASH}"
+    teardown_test_project
+  done
+}
+
 # --- Test: chained commit still clears markers when HEAD moved ---
 test_chained_commit_clears_markers() {
   setup_test_project
@@ -313,6 +339,7 @@ test_successful_commit_clears_markers
 test_failed_commit_keeps_markers
 test_markers_survive_non_commit
 test_commit_word_in_text_keeps_markers
+test_commit_tree_compared_with_approval
 test_chained_commit_clears_markers
 test_sync_marker_created_when_not_interrupted
 

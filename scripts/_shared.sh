@@ -34,6 +34,13 @@ generate_settings_json() {
     esac
     entries="${entries}$(jq -n --arg e "$event" --arg m "$matcher" --arg c "${prefix}${hook}.sh" \
       '{event:$e,matcher:$m,command:$c}')"$'\n'
+    # The evaluate gate's approvals come from the user's pick of a recorded question, read
+    # by record-approval.sh on UserPromptSubmit (approval design B). Registered with the
+    # gate, so an existing project gets it on its next sync without a manifest change.
+    if [ "$hook" = enforce-evaluate ]; then
+      entries="${entries}$(jq -n --arg c "${prefix}record-approval.sh" \
+        '{event:"UserPromptSubmit",matcher:"",command:$c}')"$'\n'
+    fi
   done
 
   # Static defense-in-depth permission rules (R-08). Leading `/` anchors at the
@@ -50,7 +57,11 @@ generate_settings_json() {
     "Edit(/.claude/manifest.json)",
     "Edit(/.claude/framework/**)",
     "Edit(//tmp/.claude_*)",
-    "Edit(//private/tmp/.claude_*)"
+    "Edit(//private/tmp/.claude_*)",
+    "Edit(/.claude/approvals.jsonl)",
+    "Edit(/.git/hooks/**)",
+    "Edit(/.git/config)",
+    "Edit(/.git/info/**)"
   ] | sort')
 
   # Let jq handle all grouping and JSON assembly

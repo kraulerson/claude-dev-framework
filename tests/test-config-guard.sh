@@ -136,12 +136,15 @@ test_allows_grep_hook_files() {
   teardown_test_project
 }
 
-# --- Test: allows mark-evaluated.sh (sanctioned script) ---
-test_allows_mark_evaluated() {
+# --- Test (approval design B): mark-evaluated.sh is the user's own override, run in a
+# separate terminal; the agent may not run it in any form ---
+test_blocks_mark_evaluated() {
   setup_test_project
   INPUT='{"tool_name":"Bash","tool_input":{"command":"bash .claude/framework/hooks/mark-evaluated.sh \"user approved\""}}'
   EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
-  assert_exit_code "0" "$EXIT_CODE" "should allow mark-evaluated.sh"
+  RESULT=$(run_hook "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT_CODE" "the agent may not run mark-evaluated.sh"
+  assert_contains "$RESULT" "pending-approval.json" "the message names the question route"
   teardown_test_project
 }
 
@@ -376,9 +379,9 @@ test_blocks_expanding_first_word() {
 test_allows_path_forms() {
   local cmd
   setup_test_project
-  for cmd in "bash $TEST_DIR/.claude/framework/hooks/mark-evaluated.sh \"approved: retries=3\"" \
+  for cmd in "bash $TEST_DIR/.claude/framework/hooks/mark-plan-closed.sh \"closed: retries=3\"" \
              'bash ./.claude/framework/hooks/mark-plan-closed.sh "closed"' \
-             'bash .claude/framework/hooks/mark-evaluated.sh "approved"'; do
+             'bash .claude/framework/hooks/mark-plan-closed.sh "closed"'; do
     EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd")")
     assert_exit_code "0" "$EXIT_CODE" "path form must still be allowed: $cmd"
   done
@@ -391,7 +394,7 @@ test_allows_project_path_with_punctuation() {
   local proj="$TEST_DIR/my+proj@2,v1:x%y" saved="$CLAUDE_PROJECT_DIR"
   mkdir -p "$proj/.claude/framework/hooks"
   export CLAUDE_PROJECT_DIR="$proj"
-  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "bash $proj/.claude/framework/hooks/mark-evaluated.sh \"approved\"")")
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "bash $proj/.claude/framework/hooks/mark-plan-closed.sh \"closed\"")")
   export CLAUDE_PROJECT_DIR="$saved"
   assert_exit_code "0" "$EXIT_CODE" "a project path with + @ , : % must still be allowed"
   teardown_test_project
@@ -414,7 +417,7 @@ test_blocks_sanctioned_name_elsewhere() {
 # --- Test (#11 case 1): a relative script path is resolved from the agent's cwd ---
 test_relative_script_resolved_from_cwd() {
   setup_test_project
-  local other cmd='bash .claude/framework/hooks/mark-evaluated.sh "approved"'
+  local other cmd='bash .claude/framework/hooks/mark-plan-closed.sh "closed"'
   other=$(mktemp -d); mkdir -p "$other/.claude/framework/hooks"
   EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd" "$other")")
   assert_exit_code "2" "$EXIT_CODE" "a relative script under another cwd must not unlock"
@@ -887,10 +890,13 @@ test_mark_chain_names_lone_form() {
     RESULT=$(run_hook "$HOOK" "$(cg_real_input "$cmd" "$PROJ")")
     EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input "$cmd" "$PROJ")")
     assert_exit_code "2" "$EXIT_CODE" "a chained mark-evaluated.sh stays blocked: $cmd"
-    assert_contains "$RESULT" "run only as a lone command from the project root" "the message names the lone form"
+    assert_contains "$RESULT" "pending-approval.json" "the message names the question route"
   done
+  # Approval design B: even the lone form is the user's own override now, not the agent's.
   EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input 'bash .claude/framework/hooks/mark-evaluated.sh "Karl approved A1"' "$PROJ")")
-  assert_exit_code "0" "$EXIT_CODE" "the lone form from the spaced project root is allowed"
+  assert_exit_code "2" "$EXIT_CODE" "the lone mark-evaluated.sh form is refused too"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input 'bash .claude/framework/hooks/mark-plan-closed.sh "closed"' "$PROJ")")
+  assert_exit_code "0" "$EXIT_CODE" "the lone mark-plan-closed.sh form from the spaced project root is allowed"
   teardown_test_project
 }
 
@@ -908,6 +914,75 @@ test_old_helpers_still_block_writes() {
   teardown_test_project
 }
 
+# --- Test (approval design B, spec 9b): git's hooks, config and info files are
+# protected, so no hook can be planted to change a commit after it was approved;
+# reads and ordinary git commands still pass, and temp fixture repos stay writable ---
+test_git_paths_protected() {
+  local p cmd fx
+  setup_test_project
+  for p in "$TEST_DIR/.git/hooks/pre-commit" "$TEST_DIR/.git/config" "$TEST_DIR/.git/info/attributes" \
+           "$TEST_DIR/.git/info/exclude" ".git/hooks/post-commit" "$TEST_DIR/.GIT/Hooks/pre-commit" \
+           "$TEST_DIR/.git//hooks/pre-commit"; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_write_input "$p")")
+    assert_exit_code "2" "$EXIT_CODE" "Write must be refused: $p"
+  done
+  RESULT=$(run_hook "$HOOK" "$(cg_write_input "$TEST_DIR/.git/info/exclude")")
+  assert_contains "$RESULT" ".gitignore" "an info/exclude refusal says to use .gitignore"
+  for cmd in 'cat > .git/hooks/pre-commit' 'cp /tmp/x .git/hooks/post-commit' 'tee .git/config < /dev/null' \
+             'printf x >> .git/info/exclude' 'cp /tmp/x .git/hooks' 'ln -s /tmp/h .GIT/hooks/pre-commit'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "Bash must be refused: $cmd"
+  done
+  for cmd in 'cat .git/config' 'ls .git/hooks' 'git remote add o https://example.invalid/r.git' \
+             'git config user.email e@example.invalid' 'git status' 'cat .gitignore' 'ls .github/workflows'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd")")
+    assert_exit_code "0" "$EXIT_CODE" "must still pass: $cmd"
+  done
+  fx=$(mktemp -d); mkdir -p "$fx/r/.git/hooks"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_write_input "$fx/r/.git/hooks/pre-commit")")
+  assert_exit_code "0" "$EXIT_CODE" "Write into a temp fixture repo's hooks is allowed"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "cp /dev/null $fx/r/.git/hooks/pre-commit")")
+  assert_exit_code "0" "$EXIT_CODE" "Bash copy into a temp fixture repo's hooks is allowed"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "cp /dev/null $fx/r/.git/config")")
+  assert_exit_code "0" "$EXIT_CODE" "Bash copy into a temp fixture repo's config is allowed"
+  rm -rf "$fx"
+  teardown_test_project
+}
+
+# --- Test (approval design B): the approval audit .claude/approvals.jsonl is written
+# only by the framework; the agent can read and stage it ---
+test_approvals_log_protected() {
+  local cmd
+  setup_test_project
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_write_input "$TEST_DIR/.claude/approvals.jsonl")")
+  assert_exit_code "2" "$EXIT_CODE" "Write to approvals.jsonl must be refused"
+  for cmd in 'echo "{}" >> .claude/approvals.jsonl' 'rm .claude/approvals.jsonl' 'sed -i "" 1d .claude/approvals.jsonl'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "must be refused: $cmd"
+  done
+  for cmd in 'cat .claude/approvals.jsonl' 'git add .claude/approvals.jsonl' 'jq . .claude/approvals.jsonl'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd")")
+    assert_exit_code "0" "$EXIT_CODE" "must still pass: $cmd"
+  done
+  teardown_test_project
+}
+
+# --- Test (approval design B, spec 10): no form of mark-evaluated.sh is sanctioned ---
+test_mark_evaluated_never_sanctioned() {
+  local cmd
+  setup_test_project
+  for cmd in 'bash .claude/framework/hooks/mark-evaluated.sh "approved"' \
+             'bash ./.claude/framework/hooks/mark-evaluated.sh "approved"' \
+             "bash $TEST_DIR/.claude/framework/hooks/mark-evaluated.sh \"approved\"" \
+             '.claude/framework/hooks/mark-evaluated.sh "approved"'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd" "$TEST_DIR")")
+    assert_exit_code "2" "$EXIT_CODE" "must be refused: $cmd"
+  done
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input 'bash .claude/framework/hooks/mark-plan-closed.sh "closed"' "$TEST_DIR")")
+  assert_exit_code "0" "$EXIT_CODE" "mark-plan-closed.sh stays sanctioned"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "config-guard.sh"
 test_blocks_write_settings
@@ -922,7 +997,7 @@ test_blocks_rm_on_hooks
 test_blocks_chmod_on_hooks
 test_allows_cat_hook_files
 test_allows_grep_hook_files
-test_allows_mark_evaluated
+test_blocks_mark_evaluated
 test_allows_normal_bash
 test_blocks_project_dir_override
 test_allows_project_dir_read
@@ -980,4 +1055,7 @@ test_allows_git_add_staging
 test_blocks_unsafe_chains
 test_mark_chain_names_lone_form
 test_old_helpers_still_block_writes
+test_git_paths_protected
+test_approvals_log_protected
+test_mark_evaluated_never_sanctioned
 run_tests

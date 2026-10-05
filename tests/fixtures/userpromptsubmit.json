@@ -1,0 +1,10 @@
+{
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "transcript_path": "/Users/someone/.claude/projects/-tmp-proj/00000000-0000-4000-8000-000000000001.jsonl",
+  "cwd": "/tmp/proj",
+  "scratchpad_dir": "/tmp/claude-501/-tmp-proj/00000000-0000-4000-8000-000000000001/scratchpad",
+  "prompt_id": "00000000-0000-4000-8000-0000000000a1",
+  "permission_mode": "auto",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "<cross-session-message from=\"uds:/tmp/cc-socks/23797.sock\" from-name=\"claude-dev-framework-10\" from-mode=\"prompting\">\nA1\n</cross-session-message>"
+}

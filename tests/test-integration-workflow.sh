@@ -30,10 +30,29 @@ test_full_session_lifecycle() {
   EVAL_RESULT=$(run_hook "$HOOK_DIR/enforce-evaluate.sh" "$COMMIT_INPUT")
   assert_contains "$EVAL_RESULT" "BLOCKED" "enforce-evaluate should block without marker"
 
-  # --- Phase 3: Create Marker, Retry ---
-  touch "/tmp/.claude_evaluated_${TEST_HASH}"
+  # --- Phase 3: Approval round trip (approval design B, spec test 12) ---
+  # Stage the change, record the question, stop, then the user answers A1 twice.
+  echo "// feature code" > "$TEST_DIR/app.kt"
+  echo "- Added feature" > "$TEST_DIR/CHANGELOG.md"
+  git -C "$TEST_DIR" add app.kt CHANGELOG.md
+  cat > "$TEST_DIR/.claude/pending-approval.json" << 'JSON'
+{"schema": 2, "question": "Commit the feature?", "options": [{"id": "A1", "text": "Commit app.kt and the changelog", "approves": "commit"}, {"id": "A2", "text": "Hold", "approves": "none"}], "recommendation": "A1", "offered_at": "2026-10-05T12:00:00Z"}
+JSON
+  STOP_OUT=$(run_hook "$HOOK_DIR/stop-checklist.sh" "$(jq -c . "$SCRIPT_DIR/fixtures/stop.json")")
+  assert_not_contains "$STOP_OUT" '"decision"' "the agent may stop while the question is pending"
+  assert_contains "$STOP_OUT" "Commit the feature?" "the stop hook shows the pending question"
+  UPS=$(jq -c --arg d "$TEST_DIR" '.prompt = "A1" | .session_id = "s1" | .cwd = $d' "$SCRIPT_DIR/fixtures/userpromptsubmit.json")
+  RENDER=$(run_hook "$HOOK_DIR/record-approval.sh" "$UPS")
+  assert_equals "block" "$(jq -r .decision <<< "$RENDER")" "the first A1 shows the question and the staged change"
+  assert_contains "$(jq -r .reason <<< "$RENDER")" "app.kt" "the render lists the staged change"
+  EVAL_MID=$(run_hook_exit_code "$HOOK_DIR/enforce-evaluate.sh" "$COMMIT_INPUT")
+  assert_exit_code "2" "$EVAL_MID" "rendering alone approves nothing"
+  run_hook "$HOOK_DIR/record-approval.sh" "$UPS" >/dev/null
+  assert_file_exists "/tmp/.claude_evaluated_${TEST_HASH}" "the confirming A1 creates the approval"
   EVAL_RESULT2=$(run_hook "$HOOK_DIR/enforce-evaluate.sh" "$COMMIT_INPUT")
-  assert_equals "" "$EVAL_RESULT2" "enforce-evaluate should pass with marker"
+  assert_equals "" "$EVAL_RESULT2" "enforce-evaluate should pass with the approval"
+  EVAL_A=$(run_hook_exit_code "$HOOK_DIR/enforce-evaluate.sh" '{"tool_input":{"command":"git commit -am \"Add feature\""}}')
+  assert_exit_code "2" "$EVAL_A" "the approval does not cover git commit -a"
 
   # --- Phase 4: Enforce Superpowers Block (no marker) ---
   WRITE_INPUT='{"tool_input":{"file_path":"app.kt"}}'
@@ -61,6 +80,7 @@ test_full_session_lifecycle() {
   POST_COMMIT='{"tool_name":"Bash","tool_input":{"command":"git commit -m \"Add feature\""},"tool_response":{"stdout":"","stderr":"","interrupted":false}}'
   run_hook "$HOOK_DIR/marker-tracker.sh" "$POST_COMMIT" >/dev/null
   assert_file_not_exists "/tmp/.claude_evaluated_${TEST_HASH}" "eval marker should be cleared after commit"
+  assert_equals "true" "$(tail -n 1 "$TEST_DIR/.claude/approvals.jsonl" | jq -r .matched)" "the committed tree is the approved one"
   assert_file_not_exists "/tmp/.claude_superpowers_${TEST_HASH}" "superpowers marker should be cleared after commit"
 
   # Commit the .claude framework files so the tree is genuinely clean for Phase 7.

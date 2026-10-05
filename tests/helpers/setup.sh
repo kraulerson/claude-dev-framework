@@ -15,6 +15,9 @@ cp -R "$HOOK_DIR/../hooks" "$HOOK_DIR/../rules" "$HOOK_DIR/../gates" "$HOOK_DIR/
       "$TEST_LAB_HOME/.claude-dev-framework/"
 git init --quiet "$TEST_LAB_HOME/.claude-dev-framework"
 export HOME="$TEST_LAB_HOME"
+# Hermetic: when the suite itself runs under Claude Code, CLAUDECODE=1 is inherited, and
+# mark-evaluated.sh refuses under it by design. Tests that need it set it themselves.
+unset CLAUDECODE
 trap 'rm -rf "$TEST_LAB_HOME"' EXIT
 
 # Create a temporary git repo with a basic manifest for testing
@@ -66,6 +69,7 @@ teardown_test_project() {
   rm -f "/tmp/.claude_c7_degraded_${TEST_HASH}"
   rm -f /tmp/.claude_c7_${TEST_HASH}_*
   rm -f /tmp/.claude_stop_errors_hash_${TEST_HASH}_*
+  rm -f "/tmp/.claude_approval_shown_${TEST_HASH}" "/tmp/.claude_eval_log_${TEST_HASH}"
 
   # Remove temp directory and remote
   [ -n "$TEST_DIR" ] && rm -rf "$TEST_DIR" "${TEST_DIR}_remote.git"

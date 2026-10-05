@@ -367,6 +367,25 @@ test_merge_drops_legacy_write_rules() {
 }
 
 # =====================================================================
+# TEST 12c (approval design B): enforce-evaluate brings the UserPromptSubmit pick hook
+# with it, and the git / approval-audit paths are denied to Edit
+# =====================================================================
+test_generate_registers_record_approval() {
+  local out
+  out=$(generate_settings_json session-start enforce-evaluate compliance-reinforce)
+  assert_equals "1" "$(echo "$out" | jq '[.hooks.UserPromptSubmit[].hooks[].command | select(endswith("/record-approval.sh"))] | length')" \
+    "generate: enforce-evaluate registers record-approval.sh on UserPromptSubmit"
+  assert_equals "1" "$(echo "$out" | jq '[.hooks.UserPromptSubmit[].hooks[].command | select(endswith("/compliance-reinforce.sh"))] | length')" \
+    "generate: compliance-reinforce stays registered beside it"
+  out=$(generate_settings_json session-start compliance-reinforce)
+  assert_equals "0" "$(echo "$out" | jq '[.. | strings | select(endswith("/record-approval.sh"))] | length')" \
+    "generate: without enforce-evaluate there is no pick hook"
+  for rule in 'Edit(/.claude/approvals.jsonl)' 'Edit(/.git/hooks/**)' 'Edit(/.git/config)' 'Edit(/.git/info/**)'; do
+    assert_equals "1" "$(echo "$out" | jq --arg r "$rule" '[.permissions.deny[] | select(. == $r)] | length')" "generate: deny contains $rule"
+  done
+}
+
+# =====================================================================
 # TEST 13: merge_hooks_into_settings — preserves user deny rules
 # =====================================================================
 test_merge_preserves_user_deny() {
@@ -433,6 +452,7 @@ test_skip_plugin_check
 test_context7_declined
 test_generate_settings_matchers
 test_generate_settings_permissions
+test_generate_registers_record_approval
 test_merge_drops_legacy_write_rules
 test_merge_preserves_user_deny
 run_tests

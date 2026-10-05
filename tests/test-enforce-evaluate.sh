@@ -6,6 +6,18 @@ source "$SCRIPT_DIR/helpers/setup.sh"
 
 HOOK="$HOOK_DIR/enforce-evaluate.sh"
 
+# Approve the currently staged change the way the user does (approval design B): a
+# schema-2 question, then the user's A1 twice through record-approval.sh.
+approve_staged() {
+  cat > "$TEST_DIR/.claude/pending-approval.json" << 'JSON'
+{"schema": 2, "question": "Commit it?", "options": [{"id": "A1", "text": "Commit the staged change", "approves": "commit"}, {"id": "A2", "text": "Hold", "approves": "none"}], "recommendation": "A1", "offered_at": "2026-10-05T12:00:00Z"}
+JSON
+  local i in
+  in=$(jq -c --arg d "$TEST_DIR" '.prompt = "A1" | .session_id = "s" | .cwd = $d' "$SCRIPT_DIR/fixtures/userpromptsubmit.json")
+  for i in 1 2; do run_hook "$HOOK_DIR/record-approval.sh" "$in" >/dev/null; done
+}
+stage_one() { echo "${2:-x}" > "$TEST_DIR/${1:-feature.py}"; git -C "$TEST_DIR" add "${1:-feature.py}"; }
+
 # --- Test: non-commit command passes silently ---
 test_non_commit_passthrough() {
   setup_test_project
@@ -24,15 +36,22 @@ test_commit_without_marker() {
   assert_exit_code "2" "$EXIT_CODE" "should block with exit 2"
   assert_contains "$RESULT" "BLOCKED" "should say BLOCKED"
   assert_contains "$RESULT" "evaluate-before-implement" "should mention the rule"
-  # The relative form from the project root: an absolute path breaks on a space (#11 review).
-  assert_contains "$RESULT" 'bash .claude/framework/hooks/mark-evaluated.sh "' "should print the relative mark-evaluated.sh command"
+  # Approval design B, interim safety: the agent can record a valid question itself.
+  assert_contains "$RESULT" '"schema": 2' "the message gives the schema-2 shape"
+  assert_contains "$RESULT" '"approves": "commit"' "the message shows an approving option"
+  assert_contains "$RESULT" '"approves": "none"' "the message shows an option that approves nothing"
+  assert_contains "$RESULT" ".claude/pending-approval.json" "the message names the path"
+  assert_contains "$RESULT" "Stage exactly the change" "the message says to stage first"
+  assert_contains "$RESULT" "Stop and ask the user to reply with the option id" "the message says to stop"
+  assert_contains "$RESULT" "You cannot create the approval yourself" "the message rules out self-approval"
+  assert_not_contains "$RESULT" "run from the project root:" "the agent is no longer told to run mark-evaluated.sh"
   teardown_test_project
 }
 
 # --- Test: commit with marker passes ---
 test_commit_with_marker() {
   setup_test_project
-  touch "/tmp/.claude_evaluated_${TEST_HASH}"
+  stage_one; approve_staged
   INPUT='{"tool_input":{"command":"git commit -m \"Add feature\""}}'
   RESULT=$(run_hook "$HOOK" "$INPUT")
   assert_equals "" "$RESULT" "commit with marker should produce no output"
@@ -52,12 +71,15 @@ test_no_verify_blocked() {
 # --- Test: --amend warns but allows ---
 test_amend_warns() {
   setup_test_project
-  touch "/tmp/.claude_evaluated_${TEST_HASH}"
+  stage_one; approve_staged
   INPUT='{"tool_input":{"command":"git commit --amend -m \"rewrite\""}}'
   RESULT=$(run_hook "$HOOK" "$INPUT")
   EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
-  assert_exit_code "0" "$EXIT_CODE" "--amend should allow (advisory only)"
+  # Approval design B: an approval covers one new commit of the staged change, so
+  # --amend (which rewrites history) is refused under it.
+  assert_exit_code "2" "$EXIT_CODE" "--amend is refused under an approval"
   assert_contains "$RESULT" "WARNING" "--amend should produce a warning"
+  assert_contains "$RESULT" "amend" "the refusal names --amend"
   teardown_test_project
 }
 
@@ -121,7 +143,7 @@ test_hookspath_separate_command_blocked() {
 # --- Test: -m message flag does NOT trip the -n detector ---
 test_message_flag_not_flagged() {
   setup_test_project
-  touch "/tmp/.claude_evaluated_${TEST_HASH}"
+  stage_one; approve_staged
   INPUT='{"tool_input":{"command":"git commit -m \"Add feature\""}}'
   RESULT=$(run_hook "$HOOK" "$INPUT")
   EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
@@ -382,6 +404,189 @@ test_old_helpers_still_gate_commits() {
   teardown_test_project
 }
 
+# --- Test (approval design B, spec 9a): config that runs code inside git is refused in
+# every config-setting position, with or without a marker, in any letter case ---
+test_code_running_config_refused() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    RESULT=$(run_hook "$HOOK" "$(ee_input "$cmd")")
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "must be refused: $cmd"
+    assert_contains "$RESULT" "runs code" "the refusal explains why: $cmd"
+  done << 'CMDS'
+GIT_CONFIG_PARAMETERS="'core.hooksPath=/tmp/h'" git commit -m x
+GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/tmp/h git commit -m x
+git -c CORE.HOOKSPATH=x commit -m x
+git config hook.x.command y
+git config hook.x.event pre-commit
+git config core.fsmonitor y
+git config include.path f
+git config includeIf.gitdir:/x/.path f
+git config filter.x.clean c
+git config filter.x.process p
+git config gpg.program p
+git config gpg.ssh.program p
+git config core.editor e
+git config sequence.editor e
+git config core.sshCommand s
+git config credential.helper h
+git config diff.external d
+git config diff.x.command d
+git config merge.x.driver d
+git config alias.x '!sh -c y'
+git -c alias.x='!sh' x
+git config --global --add core.hooksPath /tmp/h
+git config set core.fsmonitor y
+git config --edit
+export GIT_CONFIG_PARAMETERS="'core.fsmonitor=x'"; git status
+env GIT_CONFIG_KEY_0=hook.x.command GIT_CONFIG_VALUE_0=y git status
+git --config-env=core.hooksPath=H status
+KV='core.hooksPath=/tmp/h'; git -c "$KV" status
+CMDS
+  # The review's finding: with a marker present these committed on main (exit 0).
+  touch "/tmp/.claude_evaluated_${TEST_HASH}"
+  for cmd in "GIT_CONFIG_PARAMETERS=\"'core.hooksPath=/tmp/h'\" git commit -m x" \
+             'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/tmp/h git commit -m x'; do
+    RESULT=$(run_hook "$HOOK" "$(ee_input "$cmd")")
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "refused even with a marker: $cmd"
+    assert_contains "$RESULT" "runs code" "refused for the config, with a marker: $cmd"
+  done
+  teardown_test_project
+}
+
+# --- Test (approval design B, spec 9a): text that only mentions such a key is not a
+# config-setting position and passes (the review's false blocks) ---
+test_config_mentions_pass() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input "$cmd")")
+    assert_exit_code "0" "$EXIT_CODE" "must pass: $cmd"
+  done << 'CMDS'
+git config --get core.hooksPath
+git config core.hooksPath
+git config get core.fsmonitor
+git log --grep=include.path
+git add docs/hook.push.event.md
+git grep -n core.fsmonitor
+git show HEAD -- src/hook.deploy.command.ts
+git config alias.lg 'log --oneline'
+git config user.email e@example.invalid
+git config --list | grep alias.
+git config --get-regexp core.hookspath .
+git config --get-all core.editor vim
+CMDS
+  # A commit message naming a key is not refused for the key (only for the missing approval).
+  RESULT=$(run_hook "$HOOK" "$(ee_input 'git commit -m "docs: explain includeIf.gitdir"')")
+  assert_not_contains "$RESULT" "runs code" "a commit message naming a key is not a config setting"
+  teardown_test_project
+}
+
+# --- Test (approval design B, spec 8 and 9c): under an approval the commit must be
+# exactly `git commit` with message options, in the approved state ---
+test_commit_shape_under_approval() {
+  local cmd
+  setup_test_project
+  stage_one; approve_staged
+  echo "msg" > "$TEST_DIR/msg.txt"
+  while IFS= read -r cmd; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input "$cmd")")
+    assert_exit_code "0" "$EXIT_CODE" "allowed under the approval: $cmd"
+  done << 'CMDS'
+git commit -m x
+git commit -mx
+git commit --message=x
+git commit -sq -m x
+git commit -m "a b" -s
+git commit -F msg.txt
+git commit -S -m x
+GIT commit -m x
+git commit -m x 2>&1
+git commit --author="A <a@example.invalid>" --date=now -m x
+CMDS
+  while IFS= read -r cmd; do
+    RESULT=$(run_hook "$HOOK" "$(ee_input "$cmd")")
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "refused under the approval: $cmd"
+    assert_contains "$RESULT" "approved" "the refusal says why: $cmd"
+  done << 'CMDS'
+git commit -am x
+git commit -a -m x
+git commit -m x feature.py
+git commit -m x -- feature.py
+git commit -i -m x
+git commit -o -m x
+git commit -p
+git commit --amend -m x
+git commit --allow-empty -m x
+git commit --fixup HEAD
+git commit --unknown -m x
+git -C . commit -m x
+git -c user.name=x commit -m x
+git --config-env=user.name=N commit -m x
+GIT_INDEX_FILE=/tmp/other-index git commit -m x
+GIT_CONFIG_PARAMETERS="'user.name=x'" git commit -m x
+HOME=/tmp/h git commit -m x
+XDG_CONFIG_HOME=/x git commit -m x
+env git commit -m x
+env GIT_DIR=.git git commit -m x
+exec git commit -m x
+command git commit -m x
+/usr/bin/git commit -m x
+git add feature.py && git commit -m x
+git commit -m x | tail -3
+git commit -m x > /tmp/out
+CMDS
+  teardown_test_project
+}
+
+# --- Test (approval design B, spec 8): a change after the approval voids it ---
+test_state_changes_void_the_approval() {
+  local change
+  for change in stage hooks config remote head; do
+    setup_test_project
+    stage_one; approve_staged
+    case "$change" in
+      stage) stage_one other.py ;;
+      hooks) printf '#!/bin/sh\ngit add -A\n' > "$TEST_DIR/.git/hooks/pre-commit"; chmod +x "$TEST_DIR/.git/hooks/pre-commit" ;;
+      config) git -C "$TEST_DIR" config user.name "Someone Else" ;;
+      remote) git -C "$TEST_DIR" remote add o https://example.invalid/r.git ;;
+      head) git -C "$TEST_DIR" commit -q --allow-empty -m other ;;
+    esac
+    RESULT=$(run_hook "$HOOK" "$(ee_input 'git commit -m x')")
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input 'git commit -m x')")
+    assert_exit_code "2" "$EXIT_CODE" "a $change change voids the approval"
+    assert_contains "$RESULT" "changed since the user approved" "the refusal names the change: $change"
+    teardown_test_project
+  done
+}
+
+# --- Test (approval design B, spec 8): the human override's marker gets the same checks;
+# a marker without approved state (an old touch marker) approves nothing ---
+test_override_and_legacy_markers() {
+  setup_test_project
+  stage_one
+  (cd "$TEST_DIR" && env -u CLAUDECODE bash "$HOOK_DIR/mark-evaluated.sh" "skip evaluation" >/dev/null 2>&1)
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input 'git commit -m x')")
+  assert_exit_code "0" "$EXIT_CODE" "the override approves the staged change"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input 'git commit -am x')")
+  assert_exit_code "2" "$EXIT_CODE" "the override's marker refuses -a too"
+  stage_one other.py
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input 'git commit -m x')")
+  assert_exit_code "2" "$EXIT_CODE" "the override's marker is voided by a stage change"
+  teardown_test_project
+  setup_test_project
+  stage_one
+  touch "/tmp/.claude_evaluated_${TEST_HASH}"
+  RESULT=$(run_hook "$HOOK" "$(ee_input 'git commit -m x')")
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input 'git commit -m x')")
+  assert_exit_code "2" "$EXIT_CODE" "an empty marker approves nothing"
+  assert_contains "$RESULT" "no approved state" "the refusal explains the old marker"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "enforce-evaluate.sh"
 test_non_commit_passthrough
@@ -402,4 +607,9 @@ test_alias_check_reads_live_git
 test_relative_git_is_strict
 test_commit_flags_read_after_quote_removal
 test_old_helpers_still_gate_commits
+test_code_running_config_refused
+test_config_mentions_pass
+test_commit_shape_under_approval
+test_state_changes_void_the_approval
+test_override_and_legacy_markers
 run_tests

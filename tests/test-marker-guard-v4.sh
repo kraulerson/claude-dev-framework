@@ -100,12 +100,13 @@ test_blocks_tee_marker() {
   teardown_test_project
 }
 
-# --- Test: still allows mark-evaluated.sh ---
+# --- Test: marker-guard judges only marker names; a plain mark-evaluated.sh call that
+# names none is config-guard's to refuse (approval design B), not this hook's ---
 test_allows_mark_evaluated_script() {
   setup_test_project
   INPUT='{"tool_input":{"command":"bash .claude/framework/hooks/mark-evaluated.sh \"user approved\""}}'
   EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
-  assert_exit_code "0" "$EXIT_CODE" "should allow mark-evaluated.sh"
+  assert_exit_code "0" "$EXIT_CODE" "marker-guard leaves a marker-free mark-evaluated.sh call to config-guard"
   teardown_test_project
 }
 
@@ -172,12 +173,12 @@ test_blocks_mark_evaluated_injection() {
   teardown_test_project
 }
 
-# --- Test: plain lone mark-evaluated.sh invocation is allowed ---
+# --- Test: plain lone mark-evaluated.sh naming no marker passes marker-guard (config-guard refuses it) ---
 test_allows_lone_mark_evaluated() {
   setup_test_project
   INPUT='{"tool_input":{"command":"bash .claude/framework/hooks/mark-evaluated.sh \"reason text\""}}'
   EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
-  assert_exit_code "0" "$EXIT_CODE" "lone mark-evaluated.sh should be allowed"
+  assert_exit_code "0" "$EXIT_CODE" "marker-guard leaves a marker-free mark-evaluated.sh call to config-guard"
   teardown_test_project
 }
 
@@ -253,16 +254,17 @@ test_blocks_write_to_plan_closed() {
   teardown_test_project
 }
 
-# --- Test (parity control): lone mark-evaluated.sh is allowed even when its reason names a marker ---
-test_allows_mark_evaluated_reason_naming_marker() {
+# --- Test (approval design B): mark-evaluated.sh is no longer sanctioned, so a call that
+# names a marker is refused like any other command naming one ---
+test_blocks_mark_evaluated_reason_naming_marker() {
   setup_test_project
   INPUT='{"tool_input":{"command":"bash .claude/framework/hooks/mark-evaluated.sh \"approved: clear /tmp/.claude_evaluated_x handling\""}}'
   EXIT_CODE=$(run_hook_exit_code "$HOOK" "$INPUT")
-  assert_exit_code "0" "$EXIT_CODE" "lone mark-evaluated.sh is allowed whatever its reason says"
+  assert_exit_code "2" "$EXIT_CODE" "mark-evaluated.sh naming a marker is refused"
   teardown_test_project
 }
 
-# --- Test: lone mark-plan-closed.sh is allowed exactly as mark-evaluated.sh is ---
+# --- Test: lone mark-plan-closed.sh is allowed whatever its summary names ---
 test_allows_lone_mark_plan_closed() {
   setup_test_project
   INPUT='{"tool_input":{"command":"bash .claude/framework/hooks/mark-plan-closed.sh \"closed: /tmp/.claude_plan_closed_x lifecycle documented\""}}'
@@ -433,9 +435,9 @@ test_blocks_expanding_first_word() {
 test_allows_path_forms() {
   local cmd
   setup_test_project
-  for cmd in "bash $TEST_DIR/.claude/framework/hooks/mark-evaluated.sh \"approved: retries=3 for /tmp/.claude_evaluated_x\"" \
+  for cmd in "bash $TEST_DIR/.claude/framework/hooks/mark-plan-closed.sh \"closed: retries=3 for /tmp/.claude_plan_closed_x\"" \
              'bash ./.claude/framework/hooks/mark-plan-closed.sh "closed: /tmp/.claude_plan_closed_x"' \
-             'bash .claude/framework/hooks/mark-evaluated.sh "approved: /tmp/.claude_evaluated_x"'; do
+             'bash .claude/framework/hooks/mark-plan-closed.sh "closed: /tmp/.claude_plan_closed_x"'; do
     EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(mg_input "$cmd")")
     assert_exit_code "0" "$EXIT_CODE" "path form must still be allowed: $cmd"
   done
@@ -448,7 +450,7 @@ test_allows_project_path_with_punctuation() {
   local proj="$TEST_DIR/my+proj@2,v1:x%y" saved="$CLAUDE_PROJECT_DIR"
   mkdir -p "$proj/.claude/framework/hooks"
   export CLAUDE_PROJECT_DIR="$proj"
-  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(mg_input "bash $proj/.claude/framework/hooks/mark-evaluated.sh \"approved: /tmp/.claude_evaluated_x\"")")
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(mg_input "bash $proj/.claude/framework/hooks/mark-plan-closed.sh \"closed: /tmp/.claude_plan_closed_x\"")")
   export CLAUDE_PROJECT_DIR="$saved"
   assert_exit_code "0" "$EXIT_CODE" "a project path with + @ , : % must still be allowed"
   teardown_test_project
@@ -472,7 +474,7 @@ test_blocks_sanctioned_name_elsewhere() {
 # --- Test (#11 case 1): a relative script path is resolved from the agent's cwd ---
 test_relative_script_resolved_from_cwd() {
   setup_test_project
-  local other cmd='bash .claude/framework/hooks/mark-evaluated.sh "approved: /tmp/.claude_evaluated_abc123"'
+  local other cmd='bash .claude/framework/hooks/mark-plan-closed.sh "closed: /tmp/.claude_plan_closed_abc123"'
   other=$(mktemp -d); mkdir -p "$other/.claude/framework/hooks"
   EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(mg_input "$cmd" "$other")")
   assert_exit_code "2" "$EXIT_CODE" "a relative script under another cwd must not unlock"
@@ -567,9 +569,23 @@ test_block_message_names_scripts() {
   INPUT='{"tool_input":{"command":"touch /tmp/.claude_plan_closed_abc123"}}'
   RESULT=$(run_hook "$HOOK" "$INPUT")
   assert_contains "$RESULT" "mark-plan-closed.sh" "block message should name mark-plan-closed.sh"
-  assert_contains "$RESULT" "mark-evaluated.sh" "block message should name mark-evaluated.sh"
+  assert_contains "$RESULT" "pending-approval.json" "block message should name the question route for the evaluation marker"
   assert_not_contains "$RESULT" "created automatically" "block message must not claim every marker is automatic"
-  assert_contains "$RESULT" "run the sanctioned script as a lone command" "block message should say how the script must be run"
+  assert_contains "$RESULT" "as a lone command" "block message should say how the script must be run"
+  teardown_test_project
+}
+
+# --- Test (approval design B): the approval render record is a framework marker ---
+test_blocks_approval_shown_marker() {
+  local cmd
+  setup_test_project
+  for cmd in 'touch /tmp/.claude_approval_shown_abc123' 'echo {} > /tmp/.claude_approval_shown_abc123' \
+             'rm -f /tmp/.claude_approval_shown_abc123'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(mg_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "must be refused: $cmd"
+  done
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(jq -nc '{tool_name:"Write",tool_input:{file_path:"/tmp/.claude_approval_shown_abc123",content:"{}"}}')")
+  assert_exit_code "2" "$EXIT_CODE" "Write to the render record is refused"
   teardown_test_project
 }
 
@@ -601,7 +617,7 @@ test_blocks_mark_evaluated_redirect
 test_blocks_plan_closed_direct_create
 test_blocks_plan_closed_direct_delete
 test_blocks_write_to_plan_closed
-test_allows_mark_evaluated_reason_naming_marker
+test_blocks_mark_evaluated_reason_naming_marker
 test_allows_lone_mark_plan_closed
 test_allows_lone_mark_plan_closed_note
 test_blocks_mark_plan_closed_injection
@@ -630,4 +646,5 @@ test_without_jq_blocks_marker_calls
 test_blocks_prefixed_sanctioned_name
 test_blocks_other_mark_script
 test_block_message_names_scripts
+test_blocks_approval_shown_marker
 run_tests
