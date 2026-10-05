@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # config-guard.sh — PreToolUse (Bash|Write|Edit) blocks modification of framework config and hooks
-# Protects: .claude/settings.json, .claude/manifest.json, .claude/framework/hooks/*
+# Protects: .claude/settings.json, .claude/manifest.json, .claude/framework/hooks/*,
+# .claude/approvals.jsonl (approval audit), .git/hooks/*, .git/config, .git/info/*
 # Also blocks CLAUDE_PROJECT_DIR environment variable overrides.
 # A literal path into a temp fixture outside the project (a test's own
 # .claude/manifest.json under the scratchpad) is not the project's config (#11).
@@ -40,6 +41,19 @@ if [ "$TOOL_NAME" = "Write" ] || [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "
     .claude/settings.json|.claude/settings.local.json|.claude/manifest.json|.claude/framework/*)
       path_is_foreign_temp "$FILE_PATH" && guard_allow
       printf "BLOCKED — Framework configuration files cannot be modified by Claude. These files control enforcement hooks, protected branches, and verification gates.\n\nIf a configuration change is needed, ask the user to make the edit manually in their editor.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second.\n" >&2
+      guard_block
+      ;;
+    */.claude/approvals.jsonl|.claude/approvals.jsonl)
+      path_is_foreign_temp "$FILE_PATH" && guard_allow
+      printf "BLOCKED — .claude/approvals.jsonl is the approval audit; only the framework writes it. Read it or stage it; do not edit it.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second.\n" >&2
+      guard_block
+      ;;
+    */.git/hooks|*/.git/hooks/*|*/.git/config|*/.git/info|*/.git/info/*|\
+    .git/hooks|.git/hooks/*|.git/config|.git/info|.git/info/*)
+      path_is_foreign_temp "$FILE_PATH" && guard_allow
+      HINT=""
+      case "$MATCH_PATH" in *.git/info/exclude) HINT=" To ignore files, edit .gitignore instead." ;; esac
+      printf "BLOCKED — Git's hooks, config and info files cannot be modified by Claude: a hook or config planted there runs inside git commit and can change what an approved commit contains.%s Ask the user to make the change in their own terminal.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second.\n" "$HINT" >&2
       guard_block
       ;;
   esac
@@ -85,7 +99,7 @@ if grep -qiE "$CONFIG_GUARD_PROTECTED_RE" <<< "$COMMAND" \
   all_protected_paths_foreign "$COMMAND" && guard_allow
   # The project's own mark-evaluated.sh / mark-plan-closed.sh, as a lone invocation
   # (R-11) resolved from the agent's cwd (#11). See _helpers.sh.
-  if [[ "$COMMAND" == *mark-evaluated.sh* || "$COMMAND" == *mark-plan-closed.sh* ]] \
+  if [[ "$COMMAND" == *mark-plan-closed.sh* ]] \
      && is_sanctioned_mark_command "$COMMAND" "$CWD"; then
     guard_allow
   fi
@@ -96,9 +110,13 @@ if grep -qiE "$CONFIG_GUARD_PROTECTED_RE" <<< "$COMMAND" \
   # not read-only here.
   command_only_reads "$COMMAND" && guard_allow
   MARK_HINT=""
-  if [[ "$COMMAND" == *mark-evaluated.sh* || "$COMMAND" == *mark-plan-closed.sh* ]]; then
-    MARK_HINT=" mark-evaluated.sh and mark-plan-closed.sh run only as a lone command from the project root, with no cd, pipe, redirection or chaining and a plain relative path, e.g.: bash .claude/framework/hooks/mark-evaluated.sh \"what the user approved\""
+  if [[ "$COMMAND" == *mark-plan-closed.sh* ]]; then
+    MARK_HINT=" mark-plan-closed.sh runs only as a lone command from the project root, with no cd, pipe, redirection or chaining and a plain relative path, e.g.: bash .claude/framework/hooks/mark-plan-closed.sh \"one-line closure summary\""
   fi
+  if [[ "$COMMAND" == *mark-evaluated.sh* ]]; then
+    MARK_HINT="$MARK_HINT mark-evaluated.sh is the user's own override, run in their separate terminal; you cannot run it. To get a commit approved: stage the change, record the question in .claude/pending-approval.json (schema 2; see the enforce-evaluate block message for the exact shape) and stop. The user approves by replying with the option id."
+  fi
+  case "$NORM_COMMAND" in *.git/info/exclude*|*.GIT/INFO/EXCLUDE*) MARK_HINT="$MARK_HINT To ignore files, edit .gitignore instead." ;; esac
   printf "BLOCKED — Modification of framework files via Bash is not permitted. Framework hooks and configuration are managed by the framework, not by Claude. Inspection may chain only read-only commands (cat, head, tail, ls, grep, jq, sed -n N,Mp, git diff/log/show/status, cd) and plain git add, with no substitution and no redirection except 2>&1 or /dev/null; use the Read tool to view these files.%s\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second.\n" "$MARK_HINT" >&2
   guard_block
 fi

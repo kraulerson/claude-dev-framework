@@ -24,7 +24,7 @@ jq --version >/dev/null 2>&1 || {
 }
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null || echo "")
 
-BLOCK_MSG="BLOCKED — Manual marker manipulation is not permitted. Workflow markers are created by the framework when you complete the required workflow, or by the sanctioned scripts mark-evaluated.sh (after user approval of an evaluation) and mark-plan-closed.sh (after documenting plan closure). Invoke the appropriate Superpowers skill, or run the sanctioned script as a lone command, to proceed."
+BLOCK_MSG="BLOCKED — Manual marker manipulation is not permitted. Workflow markers are created by the framework when you complete the required workflow: the evaluation marker when the user picks an approving option of a question you recorded in .claude/pending-approval.json, the plan-closed marker by the sanctioned script mark-plan-closed.sh (after documenting plan closure, as a lone command). Invoke the appropriate Superpowers skill, record the question and stop, or run mark-plan-closed.sh, to proceed."
 
 # --- File tools: block any write to a framework marker path (R-07) ---
 if [[ "$TOOL_NAME" = "Write" || "$TOOL_NAME" = "Edit" || "$TOOL_NAME" = "NotebookEdit" ]]; then
@@ -41,12 +41,13 @@ fi
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || echo "")
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty' 2>/dev/null || echo "")
 
-# Allow the sanctioned mark-evaluated.sh and mark-plan-closed.sh scripts — but only
+# Allow the sanctioned mark-plan-closed.sh script (mark-evaluated.sh is the user's own
+# override since approval design B, and is not sanctioned for the agent) — but only
 # as a lone, unchained invocation (R-11) of the project's own copy: the script path,
 # taken from the agent's cwd, must resolve to <project>/.claude/framework/hooks/, so
 # a script of the same name elsewhere unlocks nothing (#11). See
 # is_sanctioned_mark_command in _helpers.sh.
-if [[ "$COMMAND" == *mark-evaluated.sh* || "$COMMAND" == *mark-plan-closed.sh* ]] \
+if [[ "$COMMAND" == *mark-plan-closed.sh* ]] \
    && is_sanctioned_mark_command "$COMMAND" "$CWD"; then
   guard_allow
 fi
@@ -61,7 +62,7 @@ fi
 # A here-string, not `echo | grep -q`: under pipefail, grep exiting on its first match
 # killed echo with SIGPIPE on a command longer than the pipe buffer, and the failed
 # pipeline read as "no match" (#11). Case-insensitive, as the disk usually is.
-if grep -qiE '\.claude_(superpowers|evaluated|plan_closed|plan_active|has_plan|skill_active|c7|c7_degraded|changelog_synced|session_start|last_head|stop_errors_hash|eval_log)' <<< "$COMMAND"; then
+if grep -qiE '\.claude_(superpowers|evaluated|plan_closed|plan_active|has_plan|skill_active|c7|c7_degraded|changelog_synced|session_start|last_head|stop_errors_hash|eval_log|approval_shown)' <<< "$COMMAND"; then
   echo "$BLOCK_MSG" >&2
   guard_block
 fi

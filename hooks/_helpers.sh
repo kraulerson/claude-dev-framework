@@ -186,6 +186,150 @@ path_outside_project() {
   return 0
 }
 
+# ---- Approval via a pending question (approval design B) ----
+# Spec: docs/superpowers/specs/2026-10-05-approval-via-pending-question-design.md
+
+# The schema-2 shape of .claude/pending-approval.json, as the block and stop messages
+# show it to the agent.
+PENDING_APPROVAL_SHAPE='{"schema": 2, "question": "<what you ask the user>", "options": [{"id": "A1", "text": "<what picking it does>", "approves": "commit"}, {"id": "A2", "text": "Hold - do not commit", "approves": "none"}], "recommendation": "A1", "offered_at": "<UTC time, e.g. 2026-10-05T12:00:00Z>"}'
+
+# Print a JSON summary of a pending-approval sentinel: {schema, question, opts:[{id,
+# text, approves}], rec, problems:[…]}. problems is empty only for a schema-2 sentinel
+# that can be answered: a non-empty question, two or more options whose ids are a
+# letter and one or two digits (A1 … Z99) and unique ignoring case, and at least one
+# option that approves nothing. `approves` is "commit" or else "none".
+pending_approval_info() {
+  jq -c '
+    def idok: type == "string" and test("^[A-Za-z][0-9]{1,2}$");
+    if type == "object" and .schema == 2 then
+      { schema: 2,
+        question: (if (.question | type) == "string" then .question else "" end),
+        opts: [ (.options // [])[]? | { id: (.id // "" | tostring),
+                                         text: (if (.text | type) == "string" then .text else "" end),
+                                         approves: (if .approves == "commit" then "commit" else "none" end) } ],
+        rec: (.recommendation // "" | tostring) }
+      | .problems = [ (if .question == "" then "the question is empty" else empty end),
+                      (if (.opts | length) < 2 then "it has fewer than two options" else empty end),
+                      (if any(.opts[]; (.id | idok) | not) then "an option id is not a letter and one or two digits (A1)" else empty end),
+                      (if ([.opts[].id | ascii_upcase] | unique | length) != (.opts | length) then "option ids repeat" else empty end),
+                      (if any(.opts[]; .approves == "none") | not then "no option approves nothing" else empty end) ]
+    else { schema: (if type == "object" then (.schema // 1) else 0 end), opts: [], problems: ["it is not schema 2"] } end
+  ' "$1" 2>/dev/null || echo '{"schema":0,"opts":[],"problems":["it is not valid JSON"]}'
+}
+
+# Print why a Bash command is not a commit an approval may cover, or nothing when it is.
+# Under an approval the command must be exactly `git commit <options>`: one simple
+# command (fd duplication and /dev/null redirections aside), first word `git` in any
+# letter case with no path, no assignment words, no env/exec/command prefix, no git
+# global options, then `commit` with message and metadata options only: -m/--message,
+# -F/--file, --author, --date, --cleanup, --trailer (each with a value, attached or
+# separate), -s/--signoff, -q/--quiet, -v/--verbose, -S/--gpg-sign[=…], --no-gpg-sign,
+# --no-edit. Everything else (-a, -i, -o, -p, --amend, --fixup, --allow-empty, a
+# pathspec, any other option) commits something other than the index the user saw.
+commit_shape_problem() {
+  local cmd="$1" prev="" out line n i w c l
+  while [ "$cmd" != "$prev" ]; do
+    prev="$cmd"
+    cmd=$(sed -E 's#(^|[[:space:]])[0-9]?(>&[0-9]|>>?[[:space:]]*/dev/null)([[:space:];&|)]|$)#\1\3#g' <<< "$cmd")
+  done
+  out=$(shell_segments "$cmd")
+  if grep -q $'^\001' <<< "$out" || [ "$(grep -c . <<< "$out")" != 1 ]; then
+    echo "it is not a lone git commit (no chaining, pipes, redirection or substitution)"; return 0
+  fi
+  line="$out"
+  local -a W
+  IFS=$'\037' read -r -a W <<< "$line"
+  n=${#W[@]}
+  if [ "$(tr '[:upper:]' '[:lower:]' <<< "${W[0]}")" != git ]; then
+    echo "the command must start with a bare git (found ${W[0]})"; return 0
+  fi
+  [ "$n" -ge 2 ] && [ "${W[1]}" = commit ] || { echo "git options before commit are not allowed (found ${W[1]:-nothing})"; return 0; }
+  i=2
+  while [ "$i" -lt "$n" ]; do
+    w="${W[$i]}"
+    case "$w" in
+      -m|-F|--message|--file|--author|--date|--cleanup|--trailer)
+        i=$((i + 1)); [ "$i" -lt "$n" ] || { echo "$w needs a value"; return 0; } ;;
+      --message=*|--file=*|--author=*|--date=*|--cleanup=*|--trailer=*|--gpg-sign|--gpg-sign=*|--no-gpg-sign|--no-edit|--signoff|--quiet|--verbose) ;;
+      --amend) echo "--amend rewrites a commit the user did not approve"; return 0 ;;
+      --*) echo "option $w is not allowed under an approval"; return 0 ;;
+      -?*)
+        c="${w#-}"
+        while [ -n "$c" ]; do
+          l="${c:0:1}"; c="${c:1}"
+          case "$l" in
+            s|q|v) ;;
+            m|F) [ -n "$c" ] || { i=$((i + 1)); [ "$i" -lt "$n" ] || { echo "-$l needs a value"; return 0; }; }; c="" ;;
+            S) c="" ;;
+            *) echo "option -$l is not allowed under an approval"; return 0 ;;
+          esac
+        done ;;
+      *) echo "a pathspec ($w) commits something other than the approved stage"; return 0 ;;
+    esac
+    i=$((i + 1))
+  done
+  return 0
+}
+
+# One line per entry of a hooks directory: name, symlink target, executable bit and
+# content hash, so the digest changes when a hook is added, removed, replaced or made
+# executable.
+_hooks_listing() {
+  local d="$1" f
+  [ -d "$d" ] || return 0
+  for f in "$d"/* "$d"/.[!.]*; do
+    [ -e "$f" ] || [ -L "$f" ] || continue
+    printf '%s|%s|%s|%s\n' "${f##*/}" "$(readlink "$f" 2>/dev/null)" "$([ -x "$f" ] && echo x)" \
+      "$([ -f "$f" ] && shasum -a 256 < "$f" | cut -c1-64)"
+  done
+}
+
+# The hooks directory git uses for the repository at $1 (honours core.hooksPath).
+git_hooks_dir() {
+  local d="${1:-.}" h
+  h=$(git -C "$d" rev-parse --git-path hooks 2>/dev/null) || return 1
+  case "$h" in /*) ;; *) h="$d/$h" ;; esac
+  printf '%s\n' "$h"
+}
+
+# The state an approval is bound to, for the repository at $1, as JSON: head (or
+# "none"), the index tree (`git write-tree`, which writes tree objects only), a digest
+# of the effective hooks directory and of `git config --list --show-origin
+# --show-scope` (every scope). Fails when write-tree fails (an unmerged index).
+git_stage_state() {
+  local d="${1:-.}" head tree hdir hd cd
+  head=$(git -C "$d" rev-parse -q --verify HEAD 2>/dev/null) || head=none
+  tree=$(git -C "$d" write-tree 2>/dev/null) || return 1
+  hdir=$(git_hooks_dir "$d") || return 1
+  hd=$(_hooks_listing "$hdir" | shasum -a 256 | cut -c1-64)
+  cd=$(git -C "$d" config --list --show-origin --show-scope 2>/dev/null | shasum -a 256 | cut -c1-64)
+  jq -nc --arg h "$head" --arg t "$tree" --arg hd "$hd" --arg cd "$cd" \
+    '{head: $h, tree: $t, hooks_digest: $hd, config_digest: $cd}'
+}
+
+# True when nothing is staged in the repository at $1 relative to HEAD.
+git_nothing_staged() {
+  local d="${1:-.}" tree base
+  tree=$(git -C "$d" write-tree 2>/dev/null) || return 1
+  base=$(git -C "$d" rev-parse -q --verify 'HEAD^{tree}' 2>/dev/null) || base=4b825dc642cb6eb9a060e54bf8d69288fbee4904
+  [ "$tree" = "$base" ]
+}
+
+# Names of the hooks that run at commit for the repository at $1: executable files in
+# the effective hooks directory (not *.sample) and hook.<name> config entries.
+git_hook_names() {
+  local d="${1:-.}" hdir f names=""
+  hdir=$(git_hooks_dir "$d") || return 0
+  for f in "$hdir"/*; do
+    [ -f "$f" ] && [ -x "$f" ] || continue
+    case "$f" in *.sample) continue ;; esac
+    names="$names ${f##*/}"
+  done
+  names="$names $(git -C "$d" config --get-regexp '^hook\..*\.(command|event)$' 2>/dev/null | awk '{split($1, a, "."); print "hook." a[2]}' | sort -u | tr '\n' ' ')"
+  names=$(printf '%s' "$names" | tr -s ' ' | sed -e 's/^ //' -e 's/ $//')
+  printf '%s\n' "${names:-none}"
+}
+
 # ---- Guard path helpers (marker-guard.sh, config-guard.sh; #11) ----
 
 # Normalize a path lexically (no disk access): collapse `//`, drop `/.` segments,
@@ -248,7 +392,10 @@ normalize_command_paths() {
 # directory is not: the word appears in commit messages and everyday commands, and a
 # copy into it needs a source file already named settings.json — no cheaper than the
 # write-a-script-then-run-it residual (R-23).
-CONFIG_GUARD_PROTECTED_RE='\.claude/(settings\.json|settings\.local\.json|manifest\.json|framework/hooks/)|\.claude/framework(/hooks)?/?([^[:alnum:]_./-]|$)'
+# Also the approval audit .claude/approvals.jsonl, and git's hooks, config and info
+# files: a hook planted there runs inside `git commit` and can change what an approved
+# commit contains (approval design B, D7). `.gitignore` and `.github/` do not match.
+CONFIG_GUARD_PROTECTED_RE='\.claude/(settings\.json|settings\.local\.json|manifest\.json|framework/hooks/|approvals\.jsonl)|\.claude/framework(/hooks)?/?([^[:alnum:]_./-]|$)|\.git/(hooks|info|config)([^[:alnum:]_.-]|$)'
 
 # A lone command: no chaining, piping, redirection, substitution or newline.
 is_lone_command() {
@@ -459,6 +606,107 @@ git_name_can_alias() {
 # True when a Bash command runs `git commit` (git_commit_text, without the text).
 command_runs_git_commit() { git_commit_text "$1" >/dev/null; }
 
+# Print the git config key a Bash command SETS that runs code inside git, and return 0;
+# return 1 when it sets none (approval design B, D4). Only config-setting positions
+# count, so reads, messages, --grep and pathspecs that mention a key pass:
+#   - the value of `-c` and of `--config-env[=]` on a git word;
+#   - GIT_CONFIG_PARAMETERS=… (each key= inside it) and GIT_CONFIG_KEY_<n>=… as
+#     assignment words in any segment (also after env / export);
+#   - the key of a setting `git config`: KEY VALUE, --add, --replace-all, --unset(-all),
+#     --rename-section, --remove-section, `set` / `unset`; --edit / -e / `edit` always.
+# Refused keys: core.hooksPath, hook.*, core.fsmonitor, core.sshCommand, core.askPass,
+# core.editor, sequence.editor, gpg.program, gpg.*.program, filter.*.clean|smudge|process,
+# diff.external, diff.*.command, merge.*.driver, credential.helper,
+# credential.*.helper, include.path, includeIf.*, and alias.* whose value starts with
+# `!` or is hidden (--config-env, GIT_CONFIG_KEY_<n>, a $variable). A key itself hidden
+# in a $variable counts as refused. A command the split cannot follow (substitution)
+# falls back to a text match of the refused keys.
+GIT_CODE_CONFIG_RE='core\.hookspath|(^|[^[:alnum:]_.])hook\.|core\.fsmonitor|core\.sshcommand|core\.askpass|core\.editor|sequence\.editor|gpg\.([^[:space:]=]*\.)?program|filter\.[^[:space:]=]*\.(clean|smudge|process)|diff\.external|diff\.[^[:space:]=]*\.command|merge\.[^[:space:]=]*\.driver|credential\.([^[:space:]=]*\.)?helper|include\.path|includeif\.'
+git_sets_code_config() {
+  local cmd="$1" out
+  if [ "${#cmd}" -le 65536 ]; then
+    out=$(shell_segments "$cmd" | awk -F'\037' '
+      function base(x) { sub(/.*\//, "", x); return x }
+      function refused(k,   l) {
+        l = tolower(k)
+        if (l ~ /\$/) return 1
+        return (l == "core.hookspath" || l ~ /^hook\./ || l == "core.fsmonitor" || \
+                l == "core.sshcommand" || l == "core.askpass" || l == "core.editor" || \
+                l == "sequence.editor" || l == "gpg.program" || l ~ /^gpg\..*\.program$/ || \
+                l ~ /^filter\..*\.(clean|smudge|process)$/ || l == "diff.external" || \
+                l ~ /^diff\..*\.command$/ || l ~ /^merge\..*\.driver$/ || \
+                l == "credential.helper" || l ~ /^credential\..*\.helper$/ || \
+                l == "include.path" || l ~ /^includeif\./)
+      }
+      function checkkv(kv, hidden,   i, k, v) {
+        i = index(kv, "=")
+        if (i) { k = substr(kv, 1, i - 1); v = substr(kv, i + 1) } else { k = kv; v = "" }
+        if (v ~ /\$/) hidden = 1
+        if (hit == "" && refused(k)) hit = k
+        if (hit == "" && tolower(k) ~ /^alias\./ && (hidden || v ~ /^!/)) hit = k
+      }
+      function section_refused(sec,   l) {
+        l = tolower(sec)
+        return (l ~ /^(hook|includeif|include|filter|diff|merge|gpg|credential|core|sequence|alias)(\.|$)/)
+      }
+      /^\001subst$/ { subst = 1; next }
+      /^\001/ { next }
+      {
+        g = 0
+        for (j = 1; j <= NF && !g; j++) if (tolower(base($j)) == "git") { g = 1; gi = j }
+        # Config passed through the environment, as an assignment word anywhere in the
+        # segment (X=… git …, env X=… git …, export X=…).
+        for (j = 1; j <= NF; j++) {
+          w = $j
+          if (w ~ /^GIT_CONFIG_PARAMETERS=/) {
+            val = substr(w, index(w, "=") + 1)
+            if (val ~ /\$/ && hit == "") hit = "GIT_CONFIG_PARAMETERS"
+            n = split(val, parts, /[ \t]+/)
+            for (q = 1; q <= n; q++) { p = parts[q]; gsub(/\047/, "", p); if (p ~ /=/) checkkv(p, 0) }
+          } else if (w ~ /^GIT_CONFIG_KEY_[0-9]+=/) checkkv(substr(w, index(w, "=") + 1), 1)
+        }
+        if (!g) next
+        m = gi + 1
+        while (m <= NF && $m ~ /^-/) {
+          if ($m == "-c" && m < NF) { checkkv($(m + 1), 0); m += 2; continue }
+          if ($m ~ /^--config-env=/) { checkkv(substr($m, 14), 1); m++; continue }
+          if ($m == "--config-env" && m < NF) { checkkv($(m + 1), 1); m += 2; continue }
+          if ($m ~ /^(-C|--git-dir|--work-tree|--namespace|--super-prefix|--attr-source|--exec-path)$/) m++
+          m++
+        }
+        if (m > NF || $m != "config") next
+        setting = 0; reading = 0; pos = 0; split("", posw)
+        for (r = m + 1; r <= NF; r++) {
+          w = $r
+          if (w == "--edit" || w == "-e") { if (hit == "") hit = "config --edit"; break }
+          if (w ~ /^--(add|replace-all|unset|unset-all|rename-section|remove-section)$/) { setting = 1; if (w ~ /section$/) sect = 1; continue }
+          if (w ~ /^--(get|get-all|get-regexp|get-urlmatch|get-color|get-colorbool|list|show-origin|show-scope|name-only)$/ || w == "-l") { reading = 1; continue }
+          if (w ~ /^(-f|--file|--blob|--type|--default|--comment|--value|--file=.*)$/) { if (w !~ /=/) r++; continue }
+          if (w ~ /^-/) continue
+          pos++; posw[pos] = w
+        }
+        if (posw[1] == "edit") { if (hit == "") hit = "config edit"; next }
+        if (posw[1] == "get" || posw[1] == "list") next
+        if (posw[1] == "set") { checkkv(posw[2] "=" posw[3], 0); next }
+        if (posw[1] == "unset") { checkkv(posw[2], 0); next }
+        if (posw[1] == "rename-section" || posw[1] == "remove-section" || sect) {
+          for (q = 1; q <= pos; q++) if (posw[q] != "rename-section" && posw[q] != "remove-section" && section_refused(posw[q]) && hit == "") hit = posw[q]
+          next
+        }
+        if (reading && !setting) next
+        if (pos >= 2 || setting) checkkv(posw[1] "=" posw[2], 0)
+      }
+      END { if (hit != "") print hit; else if (subst) print "?subst" }')
+  else
+    out="?subst"
+  fi
+  case "$out" in
+    '') return 1 ;;
+    '?subst') grep -qiE "$GIT_CODE_CONFIG_RE" <<< "$cmd" && grep -qiE '(^|[^[:alnum:]_])git([^[:alnum:]_]|$)' <<< "$cmd" && { echo "(config inside a substitution)"; return 0; }; return 1 ;;
+    *) printf '%s\n' "$out"; return 0 ;;
+  esac
+}
+
 # True when every simple command in a Bash command only reads, or stages files with a
 # plain `git add` (staging copies what is on disk into the index; it changes no file
 # in the working tree, so a framework-written .claude file can be staged for commit
@@ -502,19 +750,21 @@ command_only_reads() {
     END { print (bad || NR == 0 ? "no" : "yes") }')" = yes ]
 }
 
-# True when COMMAND is a lone invocation of the project's own mark-evaluated.sh or
-# mark-plan-closed.sh. The first word must be a plain path, and that path — taken
+# True when COMMAND is a lone invocation of the project's own mark-plan-closed.sh.
+# mark-evaluated.sh is not sanctioned for the agent: approval comes from the user's
+# pick of a recorded question (record-approval.sh), and the script is the user's own
+# override, run in a separate terminal (approval design B, D5). The first word must be a plain path, and that path — taken
 # relative to $2, the agent's working directory from the hook input — must resolve
 # to <project>/.claude/framework/hooks/. A script of the same name anywhere else
 # does not count.
 is_sanctioned_mark_command() {
   local cmd="$1" base="${2:-${CLAUDE_PROJECT_DIR:-$PWD}}" path name dir hooks
   is_lone_command "$cmd" || return 1
-  [[ "$cmd" =~ ^[[:space:]]*(bash[[:space:]]+)?([[:alnum:]_./+@,:%-]*mark-(evaluated|plan-closed)\.sh)([[:space:]]|$) ]] || return 1
+  [[ "$cmd" =~ ^[[:space:]]*(bash[[:space:]]+)?([[:alnum:]_./+@,:%-]*mark-plan-closed\.sh)([[:space:]]|$) ]] || return 1
   path="${BASH_REMATCH[2]}"
   case "$path" in /*) ;; *) path="$base/$path" ;; esac
   name="${path##*/}"
-  [ "$name" = "mark-evaluated.sh" ] || [ "$name" = "mark-plan-closed.sh" ] || return 1
+  [ "$name" = "mark-plan-closed.sh" ] || return 1
   dir=$(cd "${path%/*}/" 2>/dev/null && pwd -P) || return 1
   hooks=$(cd "${CLAUDE_PROJECT_DIR:-$PWD}/.claude/framework/hooks" 2>/dev/null && pwd -P) || return 1
   [ "$dir" = "$hooks" ]
@@ -561,7 +811,7 @@ path_is_foreign_temp() {
 # string that starts earlier.
 all_protected_paths_foreign() {
   local cmd="$1" rest m c tok pre prev q="" quotes i found=0
-  local re='(^|[^[:alnum:]_./+@,:%-])([[:alnum:]_./+@,:%-]*\.[cC][lL][aA][uU][dD][eE][[:alnum:]_./+@,:%-]*)'
+  local re='(^|[^[:alnum:]_./+@,:%-])([[:alnum:]_./+@,:%-]*\.([cC][lL][aA][uU][dD][eE]|[gG][iI][tT]/)[[:alnum:]_./+@,:%-]*)'
   [ "${#cmd}" -le 16384 ] || return 1
   case "$cmd" in *\\*|*\#*|*\`*|*\;*|*\&*|*\|*|*$'\n'*|*'$('*|*'${'*|*"\$'"*|*'$"'*) return 1 ;; esac
   rest="$cmd"; prev=""

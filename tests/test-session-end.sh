@@ -21,8 +21,10 @@ test_clears_session_markers() {
   touch "/tmp/.claude_c7_${TEST_HASH}_react"
   touch "/tmp/.claude_stop_errors_hash_${TEST_HASH}_abc123"
   touch "/tmp/.claude_eval_log_${TEST_HASH}"
+  touch "/tmp/.claude_approval_shown_${TEST_HASH}"
 
   run_hook "$HOOK" '{}' >/dev/null 2>&1
+  assert_file_not_exists "/tmp/.claude_approval_shown_${TEST_HASH}" "clears the approval render record"
 
   assert_file_not_exists "/tmp/.claude_superpowers_${TEST_HASH}" "clears superpowers"
   assert_file_not_exists "/tmp/.claude_evaluated_${TEST_HASH}" "clears evaluated"

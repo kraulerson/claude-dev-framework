@@ -15,7 +15,8 @@ rm -f "/tmp/.claude_superpowers_${HASH}" \
       "/tmp/.claude_changelog_synced_${HASH}" \
       "/tmp/.claude_c7_degraded_${HASH}" \
       "/tmp/.claude_session_start_${HASH}" \
-      "/tmp/.claude_last_head_${HASH}"
+      "/tmp/.claude_last_head_${HASH}" \
+      "/tmp/.claude_approval_shown_${HASH}"
 rm -f "/tmp/.claude_c7_${HASH}_"* 2>/dev/null || true
 rm -f "/tmp/.claude_stop_errors_hash_${HASH}"* 2>/dev/null || true
 exit 0

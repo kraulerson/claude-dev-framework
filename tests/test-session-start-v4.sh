@@ -77,7 +77,9 @@ test_startup_clears_markers() {
   touch "/tmp/.claude_superpowers_${TEST_HASH}"
   touch "/tmp/.claude_evaluated_${TEST_HASH}"
   touch "/tmp/.claude_c7_${TEST_HASH}_react"
+  touch "/tmp/.claude_approval_shown_${TEST_HASH}"
   run_hook "$HOOK" '{"source":"startup"}' >/dev/null 2>&1
+  assert_file_not_exists "/tmp/.claude_approval_shown_${TEST_HASH}" "startup clears the approval render record"
   assert_file_not_exists "/tmp/.claude_superpowers_${TEST_HASH}" "startup clears superpowers"
   assert_file_not_exists "/tmp/.claude_evaluated_${TEST_HASH}" "startup clears evaluated"
   assert_file_not_exists "/tmp/.claude_c7_${TEST_HASH}_react" "startup clears c7 markers"
@@ -91,7 +93,9 @@ test_resume_preserves_markers() {
   touch "/tmp/.claude_superpowers_${TEST_HASH}"
   touch "/tmp/.claude_evaluated_${TEST_HASH}"
   echo "SEEDED_HEAD_VALUE" > "/tmp/.claude_session_start_${TEST_HASH}"
+  touch "/tmp/.claude_approval_shown_${TEST_HASH}"
   run_hook "$HOOK" '{"source":"resume"}' >/dev/null 2>&1
+  assert_file_exists "/tmp/.claude_approval_shown_${TEST_HASH}" "resume keeps the approval render record (headless --resume)"
   assert_file_exists "/tmp/.claude_superpowers_${TEST_HASH}" "resume preserves superpowers"
   assert_file_exists "/tmp/.claude_evaluated_${TEST_HASH}" "resume preserves evaluated"
   SS=$(cat "/tmp/.claude_session_start_${TEST_HASH}" 2>/dev/null || echo "")
@@ -176,7 +180,8 @@ test_directive_names_sanctioned_scripts() {
   setup_test_project
   RESULT=$(run_hook "$HOOK" '{"source":"startup"}')
   assert_contains "$RESULT" "mark-plan-closed.sh" "directive should name mark-plan-closed.sh"
-  assert_contains "$RESULT" "mark-evaluated.sh" "directive should name mark-evaluated.sh"
+  assert_contains "$RESULT" "pending-approval.json" "directive should name the approval route"
+  assert_not_contains "$RESULT" "mark-evaluated.sh" "the directive no longer offers mark-evaluated.sh to the agent"
   assert_not_contains "$RESULT" "Markers are created automatically" "directive must not claim every marker is automatic"
   assert_contains "$RESULT" "never create one yourself" "directive should forbid creating a marker"
   rm -f "/tmp/.claude_last_head_${TEST_HASH}"
