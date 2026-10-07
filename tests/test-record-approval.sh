@@ -125,6 +125,63 @@ test_non_approving_pick() {
   teardown_test_project
 }
 
+# --- Test (self-approval finding, PR 1, defect 2): a pick that approves nothing withdraws
+# an earlier approval not yet used by a commit, so "hold" holds ---
+test_non_approving_pick_withdraws_approval() {
+  setup_test_project; stage_change; write_v2
+  run_hook "$HOOK" "$(ups_input "A1")" >/dev/null
+  run_hook "$HOOK" "$(ups_input "A1")" >/dev/null
+  assert_file_exists "$(marker)" "precondition: A1 approved the staged change"
+  write_v2
+  run_hook "$HOOK" "$(ups_input "A2")" >/dev/null
+  RESULT=$(run_hook "$HOOK" "$(ups_input "A2")")
+  assert_file_not_exists "$(marker)" "the hold pick removes the unused approval"
+  assert_contains "$(ctx "$RESULT")" "withdrawn" "Claude is told the earlier approval is withdrawn"
+  assert_contains "$(tail -n 1 "/tmp/.claude_eval_log_${TEST_HASH}" 2>/dev/null)" "withdrew" "the eval log records the withdrawal"
+  assert_equals "true" "$(tail -n 1 "$TEST_DIR/.claude/approvals.jsonl" | jq -r .withdrew_approval)" "approvals.jsonl records the withdrawal"
+  EXIT_CODE=$(cd "$TEST_DIR" && jq -nc --arg d "$TEST_DIR" '{tool_name:"Bash",tool_input:{command:"git commit -m x"},cwd:$d}' | bash "$HOOK_DIR/enforce-evaluate.sh" >/dev/null 2>&1; echo $?)
+  assert_exit_code "2" "$EXIT_CODE" "the commit is refused after the hold"
+  teardown_test_project
+  setup_test_project; stage_change; write_v2
+  run_hook "$HOOK" "$(ups_input "A2")" >/dev/null
+  RESULT=$(run_hook "$HOOK" "$(ups_input "A2")")
+  assert_not_contains "$(ctx "$RESULT")" "withdrawn" "with no approval in place, nothing is said to be withdrawn"
+  assert_equals "false" "$(tail -n 1 "$TEST_DIR/.claude/approvals.jsonl" | jq -r .withdrew_approval)" "the record says nothing was withdrawn"
+  teardown_test_project
+}
+
+# --- Test (self-approval review F3): a withdrawal that cannot remove the marker fails
+# closed: the marker is overwritten with a record carrying no approved state, and one
+# that cannot be changed at all stops the turn (the prompt is blocked, nothing recorded) ---
+test_withdrawal_fails_closed() {
+  local shim mode
+  shim=$(mktemp -d)
+  printf '#!/bin/bash\nfor a in "$@"; do case "$a" in *.claude_evaluated_*) exit 1 ;; esac; done\nexec /bin/rm "$@"\n' > "$shim/rm"
+  chmod +x "$shim/rm"
+  for mode in unremovable unwritable; do
+    setup_test_project; stage_change; write_v2
+    run_hook "$HOOK" "$(ups_input "A1")" >/dev/null
+    run_hook "$HOOK" "$(ups_input "A1")" >/dev/null
+    write_v2
+    run_hook "$HOOK" "$(ups_input "A2")" >/dev/null
+    [ "$mode" = unwritable ] && chmod 444 "$(marker)"
+    RESULT=$(cd "$TEST_DIR" && ups_input "A2" | PATH="$shim:$PATH" bash "$HOOK" 2>&1)
+    EXIT_CODE=$(cd "$TEST_DIR" && jq -nc --arg d "$TEST_DIR" '{tool_name:"Bash",tool_input:{command:"git commit -m x"},cwd:$d}' | bash "$HOOK_DIR/enforce-evaluate.sh" >/dev/null 2>&1; echo $?)
+    if [ "$mode" = unremovable ]; then
+      assert_exit_code "2" "$EXIT_CODE" "unremovable: the neutralised marker approves nothing"
+      assert_equals "null" "$(jq -r .tree "$(marker)" 2>/dev/null)" "unremovable: the marker no longer carries a tree"
+      assert_contains "$(ctx "$RESULT")" "withdrawn" "unremovable: Claude is told the approval is withdrawn"
+    else
+      assert_equals "block" "$(decision "$RESULT")" "unwritable: the turn is stopped"
+      assert_contains "$(reason "$RESULT")" "could not be removed" "unwritable: the user is told why"
+      assert_file_exists "$(sentinel)" "unwritable: the question stays open"
+      chmod 644 "$(marker)"
+    fi
+    teardown_test_project
+  done
+  rm -rf "$shim"
+}
+
 # --- Test (spec 4): anything that changed since the render voids it; the reply re-renders ---
 test_changes_void_the_render() {
   local change
@@ -231,11 +288,39 @@ test_mark_evaluated_override() {
   assert_not_contains "$RESULT" "rc=0" "under CLAUDECODE the override refuses"
   assert_contains "$RESULT" "separate terminal" "the refusal says where to run it"
   assert_file_not_exists "$(marker)" "no marker under CLAUDECODE"
-  RESULT=$(cd "$TEST_DIR" && env -u CLAUDECODE bash "$HOOK_DIR/mark-evaluated.sh" "skip evaluation" 2>&1; echo "rc=$?")
-  assert_contains "$RESULT" "rc=0" "in the user's terminal the override runs"
+  RESULT=$(mark_evaluated_at_terminal "skip evaluation")
+  assert_contains "$RESULT" "rc=0" "in the user's terminal, with the code typed back, the override runs"
   assert_equals "override" "$(jq -r .source "$(marker)" 2>/dev/null)" "the override marker says so"
   assert_equals "$(git -C "$TEST_DIR" write-tree)" "$(jq -r .tree "$(marker)" 2>/dev/null)" "the override marker binds the index tree"
   assert_equals "skip evaluation" "$(tail -n 1 "$TEST_DIR/.claude/approvals.jsonl" | jq -r .reason)" "approvals.jsonl records the override"
+  teardown_test_project
+}
+
+# --- Test (self-approval finding, PR 1): the override needs the user at a terminal. The
+# agent's Bash tool has no controlling terminal, so a plain run with CLAUDECODE cleared
+# refuses; a guessed answer is refused because the code is random. (A pseudo-terminal
+# driver that reads the code, as mark_evaluated_at_terminal does, gets past this check;
+# config-guard's name match is the barrier for the agent.) ---
+test_mark_evaluated_needs_terminal_code() {
+  local answer
+  setup_test_project; stage_change
+  RESULT=$(cd "$TEST_DIR" && run_without_ctty env -u CLAUDECODE bash "$HOOK_DIR/mark-evaluated.sh" "approved" </dev/null 2>&1; echo "rc=$?")
+  assert_not_contains "$RESULT" "rc=0" "without a controlling terminal the override refuses"
+  assert_contains "$RESULT" "terminal" "the refusal says it needs the user's terminal"
+  assert_file_not_exists "$(marker)" "no marker without a terminal"
+  assert_file_not_exists "$TEST_DIR/.claude/approvals.jsonl" "no audit record without a terminal"
+  local codes=""
+  for answer in yes y 0 12345; do
+    RESULT=$(mark_evaluated_at_terminal "approved" "$answer")
+    assert_not_contains "$RESULT" "rc=0" "a guessed answer ($answer) is refused"
+    assert_file_not_exists "$(marker)" "no marker for a guessed answer ($answer)"
+    codes="$codes $(sed -n 's/.*Type \([0-9]*\) .*/\1/p' <<< "$RESULT")"
+  done
+  assert_equals "4" "$(tr ' ' '\n' <<< "$codes" | grep . | sort -u | wc -l | tr -d ' ')" "each run shows a new code: $codes"
+  RESULT=$(mark_evaluated_at_terminal "approved")
+  assert_contains "$RESULT" "rc=0" "the code shown, typed back, approves"
+  assert_contains "$RESULT" "Approve committing the staged change" "the terminal prompt says what is approved"
+  assert_file_exists "$(marker)" "the typed code writes the marker"
   teardown_test_project
 }
 
@@ -262,11 +347,14 @@ test_first_pick_renders_and_blocks
 test_render_nothing_staged_and_conflicts
 test_second_pick_approves
 test_non_approving_pick
+test_non_approving_pick_withdraws_approval
+test_withdrawal_fails_closed
 test_changes_void_the_render
 test_neutral_turns
 test_non_picks
 test_v1_and_malformed_sentinels
 test_no_sentinel_and_failures
 test_mark_evaluated_override
+test_mark_evaluated_needs_terminal_code
 test_reply_quoting_a_harness_tag
 run_tests

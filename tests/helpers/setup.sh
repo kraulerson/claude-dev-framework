@@ -110,6 +110,33 @@ run_hook() {
   (cd "$TEST_DIR" && echo "$input" | bash "$hook" 2>&1)
 }
 
+# mark-evaluated.sh, the user's override, asks for a code typed at the controlling
+# terminal. These run it the two ways the tests need, whether or not the suite itself
+# has a terminal (run from one, a bare call would wait on it).
+# run_without_ctty CMD... — in a new session with no controlling terminal, as the agent's
+# Bash tool runs: /dev/tty cannot be opened.
+run_without_ctty() {
+  perl -MPOSIX -e 'POSIX::setsid() >= 0 or die "setsid: $!\n"; exec @ARGV or die "exec: $!\n"' "$@"
+}
+# mark_evaluated_at_terminal REASON [ANSWER] — as the user at a terminal: under a
+# pseudo-terminal (expect), from TEST_DIR, typing back the code it shows, or ANSWER
+# instead. Prints the script's output, then rc=N (rc=timeout if it never finished).
+mark_evaluated_at_terminal() {
+  (cd "$TEST_DIR" && MARK="$HOOK_DIR/mark-evaluated.sh" REASON="$1" ANSWER="${2:-}" expect -c '
+    set timeout 20
+    spawn -noecho env -u CLAUDECODE bash $env(MARK) $env(REASON)
+    expect {
+      -re {Type ([0-9]+) } { set code $expect_out(1,string) }
+      eof { catch wait r; puts "\nrc=[lindex $r 3]"; exit 0 }
+      timeout { puts "\nrc=timeout"; exit 0 }
+    }
+    if {$env(ANSWER) ne ""} { set code $env(ANSWER) }
+    send "$code\r"
+    expect { eof {} timeout { puts "\nrc=timeout"; exit 0 } }
+    catch wait r
+    puts "\nrc=[lindex $r 3]"')
+}
+
 run_hook_exit_code() {
   local hook="$1" input="$2"
   (cd "$TEST_DIR" && echo "$input" | bash "$hook" >/dev/null 2>&1; echo $?)

@@ -589,6 +589,44 @@ test_blocks_approval_shown_marker() {
   teardown_test_project
 }
 
+# --- Test (self-approval finding, PR 1): a marker name split by quotes or a backslash is
+# still that name to the shell (`.claude_eval""uated_x` writes .claude_evaluated_x), so
+# one plain command after reading HEAD, the index tree and the digests wrote a valid
+# approval marker past both guards on aba947b. Every protected name, every split ---
+test_blocks_quote_split_marker_names() {
+  local name split left right cmd
+  setup_test_project
+  for name in superpowers evaluated plan_closed plan_active has_plan skill_active c7 c7_degraded \
+              changelog_synced session_start last_head stop_errors_hash eval_log approval_shown; do
+    left="${name:0:1}"; right="${name:1}"
+    for split in '""' "''" '\'; do
+      cmd="printf '%s' '{\"tree\":\"t\"}' > /tmp/.claude_${left}${split}${right}_abc123"
+      EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(mg_input "$cmd" "$TEST_DIR")")
+      assert_exit_code "2" "$EXIT_CODE" "must be refused: $cmd"
+    done
+  done
+  for cmd in 'touch /tmp/.cla""ude_evaluated_abc123' "cp x /tmp/'.claude_approval'_shown_abc123" \
+             'mv x "/tmp/.claude_"evaluated_abc123'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(mg_input "$cmd" "$TEST_DIR")")
+    assert_exit_code "2" "$EXIT_CODE" "must be refused: $cmd"
+  done
+  teardown_test_project
+}
+
+# --- Test (self-approval finding, PR 1): quotes and backslashes in ordinary commands that
+# name no marker still pass ---
+test_quotes_without_marker_names_pass() {
+  local cmd
+  setup_test_project
+  for cmd in "git commit -m \"fix: don't split\"" 'echo "a\b" | grep -c "a"' "grep -rn 'claude_' docs/" \
+             "printf '%s\n' x" 'ls /tmp/.claude-dev-framework' 'echo ".claude_" "evaluated"' \
+             "sed -n '1,5p' \"Claude Projects/x.md\""; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(mg_input "$cmd" "$TEST_DIR")")
+    assert_exit_code "0" "$EXIT_CODE" "must still pass: $cmd"
+  done
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "marker-guard.sh (v4 markers)"
 test_blocks_plan_active
@@ -647,4 +685,6 @@ test_blocks_prefixed_sanctioned_name
 test_blocks_other_mark_script
 test_block_message_names_scripts
 test_blocks_approval_shown_marker
+test_blocks_quote_split_marker_names
+test_quotes_without_marker_names_pass
 run_tests

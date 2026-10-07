@@ -62,7 +62,13 @@ fi
 # A here-string, not `echo | grep -q`: under pipefail, grep exiting on its first match
 # killed echo with SIGPIPE on a command longer than the pipe buffer, and the failed
 # pipeline read as "no match" (#11). Case-insensitive, as the disk usually is.
-if grep -qiE '\.claude_(superpowers|evaluated|plan_closed|plan_active|has_plan|skill_active|c7|c7_degraded|changelog_synced|session_start|last_head|stop_errors_hash|eval_log|approval_shown)' <<< "$COMMAND"; then
+# Also matched with quotes and backslashes removed, as config-guard does: the shell
+# joins `.claude_eval""uated_x`, `.claude_eval''uated_x` and `.claude_eval\uated_x` into
+# the marker name, so one plain command could write a full approval marker (self-approval
+# finding, PR 1). A name built by brace expansion, a glob or $'...' stays R-23.
+MARKER_NAMES_RE='\.claude_(superpowers|evaluated|plan_closed|plan_active|has_plan|skill_active|c7|c7_degraded|changelog_synced|session_start|last_head|stop_errors_hash|eval_log|approval_shown)'
+UNQUOTED_COMMAND=$(tr -d "\"'\\\\" <<< "$COMMAND")
+if grep -qiE "$MARKER_NAMES_RE" <<< "$COMMAND" || grep -qiE "$MARKER_NAMES_RE" <<< "$UNQUOTED_COMMAND"; then
   echo "$BLOCK_MSG" >&2
   guard_block
 fi

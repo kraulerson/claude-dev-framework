@@ -568,7 +568,7 @@ test_state_changes_void_the_approval() {
 test_override_and_legacy_markers() {
   setup_test_project
   stage_one
-  (cd "$TEST_DIR" && env -u CLAUDECODE bash "$HOOK_DIR/mark-evaluated.sh" "skip evaluation" >/dev/null 2>&1)
+  mark_evaluated_at_terminal "skip evaluation" >/dev/null
   EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input 'git commit -m x')")
   assert_exit_code "0" "$EXIT_CODE" "the override approves the staged change"
   EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input 'git commit -am x')")

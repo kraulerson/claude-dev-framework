@@ -266,7 +266,7 @@ test_commit_tree_compared_with_approval() {
     if [ "$mode" = hooked ]; then
       printf '#!/bin/sh\ngit add extra.py\n' > "$TEST_DIR/.git/hooks/pre-commit"; chmod +x "$TEST_DIR/.git/hooks/pre-commit"
     fi
-    (cd "$TEST_DIR" && env -u CLAUDECODE bash "$HOOK_DIR/mark-evaluated.sh" "approved fix" >/dev/null 2>&1)
+    mark_evaluated_at_terminal "approved fix" >/dev/null
     git -C "$TEST_DIR" commit -qm "fix" >/dev/null 2>&1
     INPUT=$(jq -c --arg cmd "git commit -m fix" '.tool_input.command=$cmd' "$FIXTURE_BASH")
     run_hook "$HOOK" "$INPUT" >/dev/null 2>&1
