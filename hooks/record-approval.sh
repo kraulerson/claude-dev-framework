@@ -103,21 +103,44 @@ if [ -f "$SHOWN" ] && jq -e --arg s "$SESSION" --arg h "$SENTINEL_SHA" --argjson
     exit 0
   fi
   NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  # A pick that approves nothing also withdraws an earlier approval no commit has used
+  # yet (a pick's or the override's): the user said hold.
+  WITHDREW=false
+  if [ "$APPROVES" != commit ] && [ -f "$MARKER" ]; then
+    WITHDREW=true
+    OLD_TREE=$(jq -r '.tree // "unknown"' "$MARKER" 2>/dev/null | cut -c1-12)
+  fi
   RECORD=$(jq -nc --argjson st "$STATE" --argjson o "$OPTION" --argjson i "$INFO" --arg s "$SESSION" \
     --arg p "$PROMPT_ID" --arg h "$SENTINEL_SHA" --arg now "$NOW" --arg att "${CLAUDE_CODE_SESSION_ATTENDED:-}" \
+    --argjson w "$WITHDREW" \
     '{event: "approval", source: "pick", session_id: $s, prompt_id: $p, pick: $o.id, approves: $o.approves,
-      question: $i.question, option_text: $o.text, sentinel_sha256: $h, picked_at: $now, attended: $att} + $st') \
+      question: $i.question, option_text: $o.text, sentinel_sha256: $h, picked_at: $now, attended: $att}
+      + (if $o.approves == "commit" then {} else {withdrew_approval: $w} end) + $st') \
     || report_failure "could not build the approval record"
   if [ "$APPROVES" = commit ]; then
     TMP=$(mktemp "/tmp/.claude_evaluated_${HASH}.XXXXXX") || report_failure "could not write the marker"
     printf '%s\n' "$RECORD" > "$TMP" && mv -f "$TMP" "$MARKER" || { rm -f "$TMP"; report_failure "could not write the marker"; }
+  elif [ "$WITHDREW" = true ]; then
+    # Fail closed: a marker that cannot be removed is overwritten with a record that
+    # carries no approved state (enforce-evaluate refuses it); one that cannot be
+    # changed either stops the turn, so Claude never sees this prompt, and nothing is
+    # recorded.
+    rm -f "$MARKER" 2>/dev/null
+    if [ -e "$MARKER" ] && ! { jq -nc --arg p "$PICK" --arg now "$NOW" '{event: "withdrawn", pick: $p, at: $now}' > "$MARKER"; } 2>/dev/null; then
+      jq -nc --arg r "You picked ${PICK}, which approves nothing, but the earlier approval ${MARKER} could not be removed or overwritten, so it would still let a commit through. Delete that file yourself, then answer again. Your message was not sent to Claude." \
+        '{decision: "block", reason: $r}'
+      exit 0
+    fi
   fi
   mkdir -p "$PROJ/.claude"
   printf '%s\n' "$RECORD" >> "$PROJ/.claude/approvals.jsonl"
   printf '%s | pick %s (%s) | %s\n' "$NOW" "$PICK" "$APPROVES" "$(jq -r .question <<< "$INFO" | tr '\n' ' ')" >> "/tmp/.claude_eval_log_${HASH}"
+  [ "$WITHDREW" = true ] && printf '%s | pick %s withdrew the earlier approval (tree %s)\n' "$NOW" "$PICK" "$OLD_TREE" >> "/tmp/.claude_eval_log_${HASH}"
   rm -f "$SENTINEL"
   if [ "$APPROVES" = commit ]; then
     context "The user picked ${PICK} and approved committing the staged change (tree $(jq -r .tree <<< "$STATE" | cut -c1-12)): $(jq -r .text <<< "$OPTION"). Commit it now with a lone \`git commit -m \"…\"\` and nothing else on the line. Any change to the stage, HEAD, git hooks or git config voids the approval."
+  elif [ "$WITHDREW" = true ]; then
+    context "The user picked ${PICK}: $(jq -r .text <<< "$OPTION"). That approves nothing; do not commit. The earlier approval (tree ${OLD_TREE}), not yet used by a commit, is withdrawn. The question is resolved."
   else
     context "The user picked ${PICK}: $(jq -r .text <<< "$OPTION"). That approves nothing; do not commit. The question is resolved."
   fi

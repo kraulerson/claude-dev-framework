@@ -983,6 +983,67 @@ test_mark_evaluated_never_sanctioned() {
   teardown_test_project
 }
 
+# --- Test (self-approval finding, PR 1): no copy of a hook that writes or clears a marker
+# or an approval runs, in any directory, under any interpreter, with CLAUDECODE cleared.
+# On aba947b each of these passed every guard, and the first two produced an approval:
+# the guards protected only the project's .claude/framework/hooks/ ---
+test_state_hooks_refused_anywhere() {
+  local cmd ups
+  setup_test_project
+  ups='{"prompt":"A1","session_id":"s","transcript_path":"/Users/x/.claude/projects/p/s.jsonl","cwd":"/p","permission_mode":"auto","hook_event_name":"UserPromptSubmit","prompt_id":"x"}'
+  for cmd in 'CLAUDECODE= bash ~/.claude-dev-framework/hooks/mark-evaluated.sh "approved"' \
+             'env -u CLAUDECODE bash ~/.claude-dev-framework/hooks/mark-evaluated.sh approved' \
+             'env -i PATH=/usr/bin:/bin bash ~/.claude-dev-framework/hooks/mark-evaluated.sh approved' \
+             'unset CLAUDECODE; sh ~/.claude-dev-framework/hooks/mark-evaluated.sh approved' \
+             'CLAUDECODE= zsh $HOME/.claude-dev-framework/hooks/mark-evaluated.sh approved' \
+             'CLAUDECODE= source ~/.claude-dev-framework/hooks/mark-evaluated.sh approved' \
+             'CLAUDECODE= . ~/.claude-dev-framework/hooks/mark-evaluated.sh approved' \
+             'cd ~/.claude-dev-framework && CLAUDECODE= bash hooks/mark-evaluated.sh approved' \
+             'cd /src/claude-dev-framework/hooks && CLAUDECODE= bash mark-evaluated.sh approved' \
+             'bash "/Users/x/Documents/Claude Projects/claude-dev-framework/hooks/Mark-Evaluated.SH" ok' \
+             'bash /src/cdf/hooks/mark-eval""uated.sh ok' \
+             'bash /src/cdf/hooks/mark-eval\uated.sh ok' \
+             'sh -c "CLAUDECODE= bash /src/cdf/hooks/mark-evaluated.sh approved"' \
+             'cp ~/.claude-dev-framework/hooks/mark-evaluated.sh /tmp/m.sh' \
+             'cat /src/cdf/hooks/record-approval.sh > /tmp/r.sh' \
+             'cp -R ~/.claude-dev-framework/hooks /tmp/h' \
+             'CLAUDECODE= bash ~/.claude-dev-framework/hooks/mark-e*.sh ok' \
+             "printf '%s' '$ups' | bash ~/.claude-dev-framework/hooks/record-approval.sh" \
+             "printf '%s' '$ups' | bash /tmp/cdf/hooks/record-approval.sh" \
+             "echo '{\"tool_name\":\"Skill\",\"tool_input\":{\"skill\":\"superpowers:brainstorming\"}}' | bash ~/.claude-dev-framework/hooks/marker-tracker.sh" \
+             'bash ~/.claude-dev-framework/hooks/session-start.sh </dev/null' \
+             'bash ~/.claude-dev-framework/hooks/session-end.sh' \
+             "echo '{}' | bash /src/cdf/hooks/stop-checklist.sh" \
+             'bash ~/.claude-dev-framework/hooks/mark-plan-closed.sh "closed"'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input "$cmd" "$TEST_DIR")")
+    assert_exit_code "2" "$EXIT_CODE" "must be refused: $cmd"
+  done
+  RESULT=$(run_hook "$HOOK" "$(cg_real_input 'CLAUDECODE= bash ~/.claude-dev-framework/hooks/mark-evaluated.sh "approved"' "$TEST_DIR")")
+  assert_contains "$RESULT" "separate terminal" "the refusal says the override is the user's"
+  teardown_test_project
+}
+
+# --- Test (self-approval finding, PR 1): reading, listing, searching and staging those
+# scripts, the documented framework sync and the sanctioned mark-plan-closed.sh still pass ---
+test_state_hooks_reads_pass() {
+  local cmd
+  setup_test_project
+  for cmd in 'ls ~/.claude-dev-framework/hooks' \
+             'cat ~/.claude-dev-framework/hooks/mark-evaluated.sh' \
+             'head -40 /src/cdf/hooks/record-approval.sh' \
+             'git log --oneline -- hooks/mark-evaluated.sh' \
+             'grep -r marker-tracker docs/' \
+             'grep -rn record-approval.sh docs/ | head -5' \
+             'git add hooks/record-approval.sh' \
+             'cd ~/.claude-dev-framework && git pull && cd - && bash ~/.claude-dev-framework/scripts/sync.sh' \
+             'bash tests/test-record-approval.sh' \
+             'bash .claude/framework/hooks/mark-plan-closed.sh "closed"'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input "$cmd" "$TEST_DIR")")
+    assert_exit_code "0" "$EXIT_CODE" "must still pass: $cmd"
+  done
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "config-guard.sh"
 test_blocks_write_settings
@@ -1058,4 +1119,6 @@ test_old_helpers_still_block_writes
 test_git_paths_protected
 test_approvals_log_protected
 test_mark_evaluated_never_sanctioned
+test_state_hooks_refused_anywhere
+test_state_hooks_reads_pass
 run_tests

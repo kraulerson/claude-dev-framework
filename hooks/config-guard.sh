@@ -90,6 +90,27 @@ if grep -qiE '\b(rm|mv|chmod|chown|rmdir)\b[^|;&]*[[:space:]]["'"'"']?(\./)?\.cl
   guard_block
 fi
 
+# Framework hooks that create, change or clear a workflow marker or an approval when
+# run (a hook input is just JSON on stdin, so piping a made-up one into record-approval.sh
+# twice approves, and `CLAUDECODE= bash …/mark-evaluated.sh` cleared the override's
+# only barrier). Any copy counts — the live install ~/.claude-dev-framework, a clone,
+# another project — so they are matched by file name in any folder and any letter
+# case, plus the live install's hooks folder itself (a copy or glob of it). Kept here,
+# not in _helpers.sh, so a half-done sync cannot leave the guard without it. A new hook
+# that writes or clears /tmp/.claude_* state or .claude/approvals.jsonl belongs in this
+# list. Reads stay allowed; the project's own mark-plan-closed.sh stays sanctioned.
+STATE_HOOKS_RE='(^|[^[:alnum:]_.-])(mark-evaluated|mark-plan-closed|record-approval|marker-tracker|session-start|session-end|stop-checklist)\.sh([^[:alnum:]_.-]|$)|\.claude-dev-framework/hooks([^[:alnum:]_.-]|$)'
+if grep -qiE "$STATE_HOOKS_RE" <<< "$COMMAND" \
+   || grep -qiE "$STATE_HOOKS_RE" <<< "$NORM_COMMAND"; then
+  if [[ "$COMMAND" == *mark-plan-closed.sh* ]] \
+     && is_sanctioned_mark_command "$COMMAND" "$CWD"; then
+    guard_allow
+  fi
+  command_only_reads "$COMMAND" && guard_allow
+  printf "BLOCKED — Running a framework hook that creates or clears workflow markers or approvals (mark-evaluated.sh, record-approval.sh, marker-tracker.sh, session-start.sh, session-end.sh, stop-checklist.sh, or mark-plan-closed.sh outside the project's .claude/framework/hooks/), or copying one, is not permitted, from any folder. Claude Code runs these hooks itself. mark-evaluated.sh is the user's own override, run in their separate terminal. To get a commit approved: stage the change, record the question in .claude/pending-approval.json (schema 2; see the enforce-evaluate block message for the exact shape) and stop; the user approves by replying with the option id. Reading these files (cat, grep, git log) is allowed; if a commit message only mentions one, write the message to a file and use git commit -F <file>.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second.\n" >&2
+  guard_block
+fi
+
 # Check if command references framework config or hook paths (CONFIG_GUARD_PROTECTED_RE
 # in _helpers.sh: the config files, framework/hooks/, and the bare .claude/framework
 # and .claude/framework/hooks directories, in any letter case)
