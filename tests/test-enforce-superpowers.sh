@@ -54,6 +54,24 @@ sp_input() {
 }
 enable_superpowers() { mkdir -p "$1"; echo "{\"enabledPlugins\":{\"superpowers@claude-plugins-official\":$2}}" > "$1/settings.json"; }
 
+# --- Test (dogfood-3 row 7): git's ignore and attribute files and .editorconfig are
+# configuration, not source; an unknown extension still counts as source (fail strict) ---
+test_ignore_files_are_config() {
+  local f
+  setup_test_project
+  enable_superpowers "$HOME/.claude" true
+  for f in .gitignore sub/.gitignore .gitattributes .dockerignore .editorconfig; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(sp_input "$TEST_DIR/$f")")
+    assert_exit_code "0" "$EXIT_CODE" "$f is not a source edit"
+  done
+  for f in app.kt scripts/run Makefile .envrc; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(sp_input "$TEST_DIR/$f")")
+    assert_exit_code "2" "$EXIT_CODE" "$f is still a source edit"
+  done
+  rm -f "$HOME/.claude/settings.json"
+  teardown_test_project
+}
+
 # --- Test (dogfood-2 row 27): with the plugin not enabled the block says so and gives
 # the install command, instead of sending the agent after a skill that does not exist ---
 test_not_installed_says_so() {
@@ -145,4 +163,5 @@ test_plugin_lookup_follows_config_dir
 test_block_states_marker_lifetime
 test_outside_project_passes
 test_old_helpers_still_block
+test_ignore_files_are_config
 run_tests

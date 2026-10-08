@@ -68,6 +68,8 @@ When you receive an advisory (additionalContext), you should:
 4. **Record completion** — the framework creates the marker when the skill is invoked; for an evaluation, record the question and let the user's pick create the marker; for documented plan closure run `mark-plan-closed.sh` (never `touch`)
 5. **Proceed** — you can now write source files or commit
 
+After an approving pick, commit with a lone `git commit -m "…"` as its own Bash call: no `cd … &&` prefix (run `cd` in an earlier call), no `;`, `&&`, pipes or redirection, no `-a` or paths, no `--amend`. Anything else is refused as not the approved change.
+
 If the user says "skip evaluation", record a question whose approving option says so (the user still picks it), or the user runs `mark-evaluated.sh` in their own separate terminal; if they say "skip closure", run `mark-plan-closed.sh` with that as the summary — the user has made a deliberate choice and the record says so. The Superpowers marker has no sanctioned script: invoking a skill is the only way it is created.
 
 ## Responding to Hard Blocks

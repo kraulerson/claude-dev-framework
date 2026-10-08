@@ -587,6 +587,171 @@ test_override_and_legacy_markers() {
   teardown_test_project
 }
 
+# --- Test (dogfood-3 rows 3, 10, 12): the commit is git's subcommand, not the word
+# "commit" anywhere after git — a file name (pre-commit-checks.sh), a pathspec or a
+# here-document's text is not a commit. A here-document is data unless what reads it
+# runs code (that case is in the next test) ---
+test_dogfood3_not_commits() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    cmd=$(printf '%b' "$cmd")
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input "$cmd")")
+    assert_exit_code "0" "$EXIT_CODE" "not a commit: $cmd"
+  done << 'CMDS'
+cd "$HOME/Documents/Claude Projects/k-pdf-dogfood-3" && git add .gitignore .claude/manifest.json .claude/framework/hooks/_helpers.sh .claude/framework/hooks/pre-commit-checks.sh .claude/framework/hooks/record-approval.sh && git status --short
+git add .claude/framework/hooks/pre-commit-checks.sh
+git show HEAD:hooks/pre-commit-checks.sh
+git log --oneline -- .git/hooks/commit-msg hooks/pre-commit-checks.sh
+git log --oneline -3; git status --short; git show --stat --format='%h %s' HEAD | head -5
+cat >> /tmp/notes.md <<'EOF'\n- the git commit was refused by the pre-commit hook\nEOF
+tee -a /tmp/notes.md <<EOF >/dev/null\ngit commit happened\nEOF
+python3 - <<'EOF'\nopen("/tmp/f.md", "a").write("tree clean after git status; pre-commit hook missing")\nEOF
+CMDS
+  teardown_test_project
+}
+
+# --- Test (dogfood-3 review of commit detection): what runs a here-document, a pipe or a
+# command string as code still counts, including forms the word split did not see:
+# awk's system(), env -S, and a shell or interpreter reading /dev/stdin ---
+test_dogfood3_commit_forms_still_block() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    cmd=$(printf '%b' "$cmd")
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "a commit must block: $cmd"
+  done << 'CMDS'
+git commit-tree HEAD^{tree} -m x
+git --no-pager -C . commit -m x
+bash <<'EOF'\ngit commit -m x\nEOF
+sh -s <<EOF\ngit commit -m x\nEOF
+bash /dev/stdin <<'EOF'\ngit commit -m x\nEOF
+cat <<'EOF' | sh\ngit commit -m x\nEOF
+cat <<'EOF' | bash /dev/stdin\ngit commit -m x\nEOF
+echo 'git commit -m x' | bash /dev/stdin
+python3 /dev/fd/0 <<'EOF'\nimport os; os.system("git commit -m x")\nEOF
+source /dev/stdin <<'EOF'\ngit commit -m x\nEOF
+awk 'BEGIN{system("git commit -m x")}'
+awk 'BEGIN { system("git commit -m x.") }'
+gawk -f /dev/stdin <<'EOF'\nBEGIN{system("git commit -m x")}\nEOF
+env -S 'git commit -m x'
+env --split-string='git commit -m x'
+sudo -u git git commit -m x
+find . -name git -exec git commit -m x \\;
+CMDS
+  teardown_test_project
+}
+
+# --- Test (dogfood-3 review 2): a here-document is code unless every command on the
+# line that opened it only reads data or is git — csh, make -f -, sqlite3 and sort
+# (--compress-program) run it ---
+test_heredoc_code_readers_block() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    cmd=$(printf '%b' "$cmd")
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "a commit must block: $cmd"
+  done << 'CMDS'
+csh <<EOF\ngit commit -m x\nEOF
+make -f - <<EOF\nall:\n\tgit commit -m x\nEOF
+sqlite3 :memory: <<EOF\n.shell git commit -m x\nEOF
+sort -S 1024 --compress-program=sh <<'EOF'\ngit commit -m x\nEOF
+echo ok; csh <<EOF\ngit commit -m x\nEOF
+git commit -F - <<EOF\nmsg mentioning git commit\nEOF
+gh alias set ci -s - <<EOF; gh ci\ngit commit -m x\nEOF
+gh alias set ci -s - <<EOF\ngit commit -m x\nEOF; gh ci
+CMDS
+  teardown_test_project
+}
+
+# --- Test (dogfood-3 review 2): a code string given to a command the split does not
+# follow (csh -c, expect -c, sqlite3 .shell, vim -c, Rscript -e, behind sudo or
+# nohup) runs the commit it names ---
+test_code_strings_block() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "a commit must block: $cmd"
+  done << 'CMDS'
+csh -c "git commit -m x"
+tcsh -c "git commit -m x"
+expect -c "exec git commit -m x"
+sqlite3 :memory: ".shell git commit -m x"
+vim -es -c "!git commit -m x" -c q
+Rscript -e 'system("git commit -m x")'
+sudo csh -c "git commit -m x"
+nohup tcsh -c "git commit -m x"
+gh alias set ci '!git commit -m x'
+CMDS
+  teardown_test_project
+}
+
+# --- Test (dogfood-3 review 2): text only a data reader, gh or git sees, a here-document
+# on a later line than another command, and a script file run by a listed interpreter
+# stay no commit ---
+test_data_readers_pass() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    cmd=$(printf '%b' "$cmd")
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input "$cmd")")
+    assert_exit_code "0" "$EXIT_CODE" "not a commit: $cmd"
+  done << 'CMDS'
+cat >> /tmp/notes <<EOF\nremember: git commit then pre-commit\nEOF
+npm test\ncat >> /tmp/notes <<EOF\ngit commit later\nEOF
+git log -1; git show --stat
+echo "then git commit" >> notes.md
+printf '%s\\n' "git commit later"
+gh pr create --title t --body "run git commit after"
+bash scripts/pending-approval.sh --offer "Approve: stage then git commit"
+sh -c "ls"
+if grep -q "git commit" notes.md; then echo y; fi
+cd sub && cat > notes.md <<EOF\nthen git commit\nEOF
+which git
+command -v git
+find . -name git
+brew upgrade git
+grep "git commit" log | wc -l
+make test && echo "ready for git commit"
+gh pr view 5 --json body | jq -r .body
+echo 'see\\ngit commit docs' | wc -l
+grep -n 'pre-commit' f
+CMDS
+  teardown_test_project
+}
+
+# --- Test (dogfood-3 review 2): git given its subcommand by input (xargs, parallel, a {}
+# placeholder), a real git commit beside a construct that falls back, and a pipe into a
+# command that is not a known reader all count ---
+test_hidden_commit_forms_block() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    cmd=$(printf '%b' "$cmd")
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "a commit must block: $cmd"
+  done << 'CMDS'
+xargs git <<EOF\ncommit -m x\nEOF
+echo commit -m x | xargs git
+xargs -I{} git {} -m x
+parallel git ::: commit
+find . -name x -exec git {} -m y \\;
+xargs true; g""it commit -m x
+echo $(true); g""it commit -m x
+echo 'git commit -m x' | sort --compress-program=sh
+echo 'git commit -m x' | csh
+printf '.shell git commit -m x\\n' | sqlite3 :memory:
+printf 'all:\\n\\t%s\\n' 'git commit -m x' | make -f -
+echo 'g'"it commit -m x" | csh
+printf 'all:\\n\\tgit commit -m x\\n' | make -f -
+printf 'true\\n\\tgit commit -m x\\n' | sh
+CMDS
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "enforce-evaluate.sh"
 test_non_commit_passthrough
@@ -612,4 +777,10 @@ test_config_mentions_pass
 test_commit_shape_under_approval
 test_state_changes_void_the_approval
 test_override_and_legacy_markers
+test_dogfood3_not_commits
+test_dogfood3_commit_forms_still_block
+test_heredoc_code_readers_block
+test_code_strings_block
+test_data_readers_pass
+test_hidden_commit_forms_block
 run_tests

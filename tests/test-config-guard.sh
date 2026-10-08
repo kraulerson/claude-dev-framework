@@ -1044,6 +1044,91 @@ test_state_hooks_reads_pass() {
   teardown_test_project
 }
 
+# --- Test (dogfood-3 rows 1, 5, 6, 10, 13, 14b): a framework path named only inside
+# prose — a question, a commit message, text appended to a file outside the project —
+# is not a target, and read-only inspection with find, cmp, a for loop or an if passes.
+# A protected path counts where it is a path: at the start of a word or after / = : ,
+# @ { and the like, never after a blank or ( inside quoted text, where it is part of a
+# longer name ("a .claude" is not .claude). Commands taken from the dogfood transcript ---
+test_dogfood3_prose_and_reads_pass() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    cmd=$(printf '%b' "$cmd")
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input "$cmd" "$TEST_DIR")")
+    assert_exit_code "0" "$EXIT_CODE" "must pass: $cmd"
+  done << 'CMDS'
+cd "/Users/karl/Documents/Claude Projects/k-pdf-dogfood-3" && git status --short; ls -la .git/hooks | grep -v sample; ls .claude .claude/framework | head -30; ls .venv >/dev/null 2>&1 && echo venv-present; git check-ignore -v .venv; cat .claude/manifest.json | head -20; ls *.md; grep -c . CLAUDE.md; ls tests | head -3; find tests -name 'test_*.py' | wc -l; find k_pdf -name '*.py' | wc -l
+cd "/Users/karl/Documents/Claude Projects/k-pdf-dogfood-3" && A=.claude/adoption-archive/2026-10-07T01-19-20Z-25707; for f in .claude/settings.json .claude/manifest.json CLAUDE.md PROJECT_BIBLE.md PRODUCT_MANIFESTO.md; do if git show "0bb0465:$f" | cmp -s - "$A/$f"; then echo "IDENTICAL archived: $f"; else echo "DIFFERS: $f"; fi; done; git diff --quiet 0bb0465 HEAD -- PROJECT_BIBLE.md PRODUCT_MANIFESTO.md && echo "Bible+Manifesto unchanged in tree"
+cmp .claude/settings.json /tmp/settings.json
+diff .claude/manifest.json /tmp/manifest.json
+printf '%s\\n' '- [Stage 2] git diff --name-status 0bb0465 HEAD = 119 A, 3 M (.claude/manifest.json, .claude/settings.json, CLAUDE.md), 0 deleted; untracked .claude/last-checked-commit.txt (runtime files).' >> ~/dogfood-2026-10/k-pdf-dogfood-3-FINDINGS.md
+cd "/Users/karl/Documents/Claude Projects/k-pdf-dogfood-3" && bash scripts/pending-approval.sh --offer "Save the staged Guardrails 4.4.0 update plus the .gitignore fix as one chore change? (Stage .claude/framework/hooks/pre-commit-checks.sh first with ! git add; runtime files last-checked-commit.txt and tool-usage.json stay out.)" --options "A1: Save it as one chore change" "A2: Hold - do not save" --recommendation "A1" --approves A1
+git commit -m "chore: update Guardrails to 4.4.0 and anchor lib/ ignore rule" -m "Refreshes .claude/framework via refresh-guardrails.sh and anchors lib/ to /lib/ so scripts/lib is tracked." -m "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
+git commit -m "docs: explain (.claude/settings.json) and .git/hooks in the guide"
+CMDS
+  teardown_test_project
+}
+
+# --- Test (dogfood-3, the protections that stay): a protected path that is a real target
+# — quoted, with a space in the folder, after = or {, piped from a read into a writer, in
+# a loop body, behind a find action or an assignment that changes how a read runs — is
+# still refused, and so is a line whose text the split cannot follow ---
+test_dogfood3_targets_still_refused() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    cmd=$(printf '%b' "$cmd")
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input "$cmd" "$TEST_DIR")")
+    assert_exit_code "2" "$EXIT_CODE" "must be refused: $cmd"
+  done << 'CMDS'
+cp x ".claude/settings.json"
+cp x "/Users/karl/Documents/Claude Projects/p/.claude/settings.json"
+cp x "$CLAUDE_PROJECT_DIR"/.claude/settings.json
+cp x {.claude/settings.json,y}
+install -m 644 x --target-directory=.claude/framework/hooks
+echo .claude/settings.json | xargs rm
+find .claude -name '*.sh' -delete
+find .claude/framework -name x -exec rm {} \;
+find .claude/framework/hooks -name x -delete
+find .claude/framework -name x -exec rm {} +
+find .git/hooks -name pre-commit -delete
+find .git/hooks -name x -exec cp /tmp/evil {} +
+for f in .claude/settings.json; do rm $f; done
+if true; then tee .claude/settings.json < /dev/null; fi
+PATH=/tmp/evil; cat .claude/settings.json
+GIT_EXTERNAL_DIFF=/tmp/x; git diff .claude/settings.json
+RIPGREP_CONFIG_PATH=/tmp/rgrc; rg x .claude/settings.json
+BAT_PAGER=/tmp/x; cat .claude/settings.json
+jq . .claude/manifest.json; bash scripts/resume.sh | head -20
+git commit -m "see `cat .claude/settings.json`"
+sed -i '' s/a/b/ .claude/framework/hooks/config-guard.sh
+sed -n 'w .claude/settings.json' /tmp/evil.json
+awk '{ print > "x .claude/settings.json" }' /tmp/x
+git grep -O'sh -c "cp /tmp/x .claude/settings.json"' foo
+bash -c 'cp /tmp/x .claude/settings.json'
+git() { sed "$@"; }; git commit -m 'w .claude/settings.json'
+PATH=/tmp/fake git commit -m 'w .claude/settings.json'
+export PATH=/tmp/fake; git log --format=' .claude/settings.json'
+git -c core.pager='tee x .claude/settings.json' log -p
+echo $IFS.claude/settings.json > /tmp/x
+printf '%s' "x .claude/settings.json" > .claude/settings.json
+cat >> /tmp/notes.md <<'EOF'\ncp x .claude/settings.json\nEOF
+CMDS
+  teardown_test_project
+}
+
+# --- Test (dogfood-3 rows 1, 19): the refusal names the framework path and the command in
+# the line that is not read-only, and says a script run breaks a read-only chain ---
+test_dogfood3_refusal_names_the_part() {
+  setup_test_project
+  RESULT=$(run_hook "$HOOK" "$(cg_real_input 'jq -r .frameworkVersion .claude/manifest.json; grep -c record-approval .claude/settings.json; bash scripts/resume.sh | head -20' "$TEST_DIR")")
+  assert_contains "$RESULT" "bash scripts/resume.sh" "the refusal names the command that is not read-only"
+  assert_contains "$RESULT" ".claude/manifest.json" "the refusal names the framework path"
+  assert_contains "$RESULT" "separate" "the refusal says to run it as a separate command"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "config-guard.sh"
 test_blocks_write_settings
@@ -1121,4 +1206,7 @@ test_approvals_log_protected
 test_mark_evaluated_never_sanctioned
 test_state_hooks_refused_anywhere
 test_state_hooks_reads_pass
+test_dogfood3_prose_and_reads_pass
+test_dogfood3_targets_still_refused
+test_dogfood3_refusal_names_the_part
 run_tests
