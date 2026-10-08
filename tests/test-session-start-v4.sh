@@ -246,6 +246,70 @@ test_discovery_review_not_for_adopted() {
   teardown_test_project
 }
 
+# --- #30: every source prints the time near the top, so a resumed or compacted
+# session knows today. 1789663560 is Thu 17 Sep 2026 16:46 UTC. ---
+test_now_line_every_source() {
+  local src out zones now_at
+  setup_test_project
+  for src in startup resume clear compact; do
+    out=$(CDF_NOW=1789663560 TZ=UTC run_hook "$HOOK" "{\"source\":\"$src\"}")
+    assert_equals "Now: Thu 17 Sep 2026, 16:46 UTC." "$(echo "$out" | grep '^Now: ')" "$src prints the Now line"
+    now_at=$(echo "$out" | grep -n '^Now: ' | cut -d: -f1)
+    zones=$(echo "$out" | grep -n '^ZONES ARMED' | cut -d: -f1)
+    assert_equals "yes" "$([ -n "$now_at" ] && [ "$now_at" -lt "$zones" ] && echo yes || echo no)" "$src prints it above ZONES ARMED"
+  done
+  rm -f "/tmp/.claude_last_head_${TEST_HASH}"
+  teardown_test_project
+}
+
+test_directive_says_use_now() {
+  setup_test_project
+  RESULT=$(run_hook "$HOOK" '{"source":"startup"}')
+  assert_contains "$RESULT" 'Before you write a relative day (today, tomorrow, next week) or judge a deadline, use the latest `Now:` line, not memory.' \
+    "directive tells the agent to use the Now line"
+  rm -f "/tmp/.claude_last_head_${TEST_HASH}"
+  teardown_test_project
+}
+
+# A failing date prints no time rather than a wrong one; the rest is unchanged.
+# Both reads fail: the clock (no CDF_NOW) and the formatting (CDF_NOW pinned).
+test_broken_date_omits_now() {
+  local shim out code pin
+  setup_test_project
+  shim=$(mktemp -d)
+  printf '#!/bin/bash\nexit 1\n' > "$shim/date"
+  chmod +x "$shim/date"
+  for pin in "" 1789663560; do
+    out=$(CDF_NOW="$pin" PATH="$shim:$PATH" run_hook "$HOOK" '{"source":"compact"}')
+    code=$(CDF_NOW="$pin" PATH="$shim:$PATH" run_hook_exit_code "$HOOK" '{"source":"compact"}')
+    assert_equals "0" "$code" "exits 0 when date fails (CDF_NOW='$pin')"
+    assert_not_contains "$out" "^Now:" "no Now line when date fails (CDF_NOW='$pin')"
+    assert_contains "$out" "ZONES ARMED" "zones still printed when date fails (CDF_NOW='$pin')"
+    assert_contains "$out" "POST-COMPACTION RECOVERY" "compact recovery still printed when date fails (CDF_NOW='$pin')"
+  done
+  rm -rf "$shim" "/tmp/.claude_last_head_${TEST_HASH}"
+  teardown_test_project
+}
+
+# --- A hook newer than its _helpers.sh (a sync left half done) has no cdf_now_line:
+# the directive, the zones and the compact recovery still print ---
+test_old_helpers_still_print_frame() {
+  local skew out code
+  setup_test_project
+  skew=$(mktemp -d)
+  cp "$HOOK_DIR"/*.sh "$skew/"
+  printf '\nunset -f cdf_now_line\n' >> "$skew/_helpers.sh"
+  out=$(CDF_NOW=1789663560 run_hook "$skew/session-start.sh" '{"source":"compact"}')
+  code=$(CDF_NOW=1789663560 run_hook_exit_code "$skew/session-start.sh" '{"source":"compact"}')
+  assert_equals "0" "$code" "exits 0 with an old _helpers.sh"
+  assert_contains "$out" "FRAMEWORK COMPLIANCE DIRECTIVE" "directive printed with an old _helpers.sh"
+  assert_contains "$out" "ZONES ARMED" "zones printed with an old _helpers.sh"
+  assert_contains "$out" "POST-COMPACTION RECOVERY" "compact recovery printed with an old _helpers.sh"
+  assert_not_contains "$out" "^Now:" "no Now line with an old _helpers.sh"
+  rm -rf "$skew" "/tmp/.claude_last_head_${TEST_HASH}"
+  teardown_test_project
+}
+
 echo "session-start.sh (v4 rewrite)"
 test_has_directive
 test_has_zones
@@ -266,4 +330,8 @@ test_directive_names_sanctioned_scripts
 test_superpowers_status_follows_config_dir
 test_context7_status_follows_config_dir
 test_discovery_review_not_for_adopted
+test_now_line_every_source
+test_directive_says_use_now
+test_broken_date_omits_now
+test_old_helpers_still_print_frame
 run_tests

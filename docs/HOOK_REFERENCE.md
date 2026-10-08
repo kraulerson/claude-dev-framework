@@ -16,7 +16,7 @@
 - **Event:** SessionStart
 - **Zone:** Discovery
 - **Blocking:** No
-- **Purpose:** Activates enforcement zones, checks dependencies (jq, Superpowers, Context7), outputs terse zone report, loads context history. Superpowers and Context7 are looked up where this session's settings live: `$CLAUDE_CONFIG_DIR` (its `settings.json` and `.claude.json`) when set, else `~/.claude/settings.json` and `~/.claude.json`. On `startup`/`clear` it clears the session's markers, and the approval render record only when another session made it. The "Discovery review overdue … Run: init.sh --reconfigure" warning is not given in a Solo-adopted project (manifest `adoption.adopted`): there `init.sh --reconfigure` would rewrite the whole manifest, dropping the adoption record and the project's `sourceExtensions`, and Solo's assessment is the review.
+- **Purpose:** Activates enforcement zones, checks dependencies (jq, Superpowers, Context7), outputs terse zone report, loads context history. Superpowers and Context7 are looked up where this session's settings live: `$CLAUDE_CONFIG_DIR` (its `settings.json` and `.claude.json`) when set, else `~/.claude/settings.json` and `~/.claude.json`. On `startup`/`clear` it clears the session's markers, and the approval render record only when another session made it. The "Discovery review overdue … Run: init.sh --reconfigure" warning is not given in a Solo-adopted project (manifest `adoption.adopted`): there `init.sh --reconfigure` would rewrite the whole manifest, dropping the adoption record and the project's `sourceExtensions`, and Solo's assessment is the review. For every source (startup, resume, clear, compact) it prints the local time as `Now: Thu 17 Sep 2026, 17:46 BST.` below the directive (#30), and the directive tells Claude to use the latest `Now:` line, not memory, before writing a relative day or judging a deadline; the time is read by `cdf_now_line` in `_helpers.sh` (`CDF_NOW`, epoch seconds, pins it for tests), and if `date` fails, or `_helpers.sh` is older than the hook (a sync left half done), no line is printed and the rest of the output is unchanged. Known limit: the time is not refreshed inside one long turn with no new prompt.
 - **Customize:** Edit `manifest.json → activeRules` to change rule count; `verificationGates` to change gate listing
 - **Disable:** Remove `session-start` from `manifest.json → activeHooks`
 
@@ -128,7 +128,7 @@
 ## compliance-reinforce.sh
 - **Event:** UserPromptSubmit
 - **Blocking:** No (JSON additionalContext)
-- **Purpose:** Injects a one-line compliance frame on every user prompt (Layer 1 reinforcement). The session-start directive fades over task boundaries; this keeps the compliance frame present at each decision point.
+- **Purpose:** Injects a one-line compliance frame on every user prompt (Layer 1 reinforcement). The session-start directive fades over task boundaries; this keeps the compliance frame present at each decision point. The line starts with the local time, `Now: Thu 17 Sep 2026, 17:46 BST. FRAMEWORK REMINDER: …`, so a resumed or compacted session knows today (#30); it stays one line (203 characters with a three-letter zone, 33 more than without the time). If `date` fails, or `_helpers.sh` is older than the hook (a sync left half done), the time is left out and the reminder is sent unchanged. Known limit: the time is refreshed per prompt only, so inside one long turn with no new prompt it goes stale.
 - **Disable:** Remove `compliance-reinforce` from `manifest.json → activeHooks`
 
 ## enforce-plan-tracking.sh
