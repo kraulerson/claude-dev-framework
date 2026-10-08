@@ -136,8 +136,15 @@ CTX=""
 
 # --- Output ---
 FW_VER=$(cat "$FRAMEWORK_CLONE/FRAMEWORK_VERSION" 2>/dev/null || echo "?")
+# Every source, compact included, is told the time (#30); not by a _helpers.sh older than
+# this hook (a sync left half done), which must not stop the directive.
+NOW_LINE=""
+type cdf_now_line >/dev/null 2>&1 && NOW_LINE=$(cdf_now_line)
 cat << CTXEOF
-FRAMEWORK COMPLIANCE DIRECTIVE: Your primary obligation is to follow all framework hooks and rules exactly. Never skip, circumvent, rationalize past, or fake compliance -- even if a change seems simple. When a hook blocks, follow its instructions. Markers are created by the framework or by the sanctioned script mark-plan-closed.sh; never create one yourself. A commit is approved only when the user answers a question you recorded in .claude/pending-approval.json (the enforce-evaluate block message gives the shape); then commit with a lone \`git commit -m "…"\` as its own Bash call — no cd prefix (cd in an earlier call), no chaining, pipes or redirection, no -a, no paths, no --amend. Violation is session failure.
+FRAMEWORK COMPLIANCE DIRECTIVE: Your primary obligation is to follow all framework hooks and rules exactly. Never skip, circumvent, rationalize past, or fake compliance -- even if a change seems simple. When a hook blocks, follow its instructions. Markers are created by the framework or by the sanctioned script mark-plan-closed.sh; never create one yourself. A commit is approved only when the user answers a question you recorded in .claude/pending-approval.json (the enforce-evaluate block message gives the shape); then commit with a lone \`git commit -m "…"\` as its own Bash call — no cd prefix (cd in an earlier call), no chaining, pipes or redirection, no -a, no paths, no --amend. Before you write a relative day (today, tomorrow, next week) or judge a deadline, use the latest \`Now:\` line, not memory. Violation is session failure.
+CTXEOF
+[ -n "$NOW_LINE" ] && printf "\n%s\n" "$NOW_LINE"
+cat << CTXEOF
 
 ZONES ARMED:
   # Discovery      -- Context7 ${C7_STATUS}, Superpowers ${SP_STATUS}

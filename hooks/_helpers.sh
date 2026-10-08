@@ -29,6 +29,19 @@ get_manifest_array() {
 
 get_branch() { git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown"; }
 
+# cdf_now_line — "Now: Thu 17 Sep 2026, 17:46 BST." in local time with English names, so
+# a resumed or compacted session knows today (#30). CDF_NOW (epoch seconds) overrides the
+# clock for tests. Prints nothing if date fails: no time beats a wrong one.
+cdf_now_line() {
+  local now t
+  now="${CDF_NOW:-$(date +%s 2>/dev/null)}" || now=""
+  # All digits only: BSD date reads "123abc" as 123 and "garbage" as 0 instead of failing.
+  case "$now" in ''|*[!0-9]*) return 0 ;; esac
+  t=$(LC_ALL=C date -j -f %s "$now" '+%a %d %b %Y, %H:%M %Z' 2>/dev/null \
+      || LC_ALL=C date -d "@$now" '+%a %d %b %Y, %H:%M %Z' 2>/dev/null) || t=""
+  [ -z "$t" ] || printf 'Now: %s.\n' "$t"
+}
+
 get_branch_config_value() {
   local jq_path="$1" branch base_val branch_val
   branch="$(get_branch)"
