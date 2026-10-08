@@ -120,8 +120,10 @@ is_source_file() {
     .lock|.sqlite|.db) return 1 ;;
     # Generated
     .map) return 1 ;;
-    # Data formats
-    .csv|.tsv|.parquet|.avro) return 1 ;;
+    # Data formats. JSON Lines covers the framework's audit logs, which stay tracked:
+    # .claude/approvals.jsonl (record-approval, marker-tracker) and Solo's
+    # .claude/tdd-warn-ledger.jsonl (owner ruling, 2026-10-07).
+    .csv|.tsv|.parquet|.avro|.jsonl|.ndjson) return 1 ;;
   esac
 
   # 5. Default: treat unknown extensions as source
@@ -137,14 +139,22 @@ is_test_file() {
 
 is_doc_or_config() {
   case ".${1##*.}" in .md|.txt|.json|.yml|.yaml|.xml|.toml|.ini|.cfg|.conf) return 0 ;; esac
+  # git's ignore and attribute files and .editorconfig: named by a leading dot, so the
+  # extension test reads the whole name (dogfood-3 row 7). Other unknown names stay
+  # source (fail strict).
+  case "${1##*/}" in .gitignore|.gitattributes|.dockerignore|.editorconfig) return 0 ;; esac
   return 1
 }
 
 check_context7() {
-  # Three valid install paths: direct MCP in ~/.claude/settings.json, direct MCP in ~/.claude.json (what `claude mcp add -s user` writes), or plugin entry in ~/.claude/settings.json under .enabledPlugins.
+  # Three valid install paths: direct MCP in the user settings.json, direct MCP in the
+  # user .claude.json (what `claude mcp add -s user` writes), or a plugin entry in the
+  # user settings.json under .enabledPlugins. The user files live in $CLAUDE_CONFIG_DIR
+  # when it is set (both settings.json and .claude.json), else ~/.claude and ~/.claude.json.
   check_jq || return 1
-  local user_settings="$HOME/.claude/settings.json"
+  local user_settings="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
   local user_json="$HOME/.claude.json"
+  [ -n "${CLAUDE_CONFIG_DIR:-}" ] && user_json="$CLAUDE_CONFIG_DIR/.claude.json"
   [ -f "$user_settings" ] && jq -e '.mcpServers.context7 // .mcpServers["context7-mcp"] // empty' "$user_settings" >/dev/null 2>&1 && return 0
   [ -f "$user_json" ]     && jq -e '.mcpServers.context7 // .mcpServers["context7-mcp"] // empty' "$user_json"     >/dev/null 2>&1 && return 0
   [ -f "$user_settings" ] && jq -e '(.enabledPlugins // {}) | to_entries[] | select(.key | test("^context7(@|$)"; "i")) | select(.value == true)' "$user_settings" >/dev/null 2>&1 && return 0
@@ -407,8 +417,15 @@ is_lone_command() {
 # escapes removed) separated by \037, split at an unquoted ; & | ( ) or newline. Then
 # one \001-prefixed line per construct the split cannot follow: subst (`...`, $(...),
 # <(...), also inside double quotes), redirect (an unquoted < or >), comment, ansi
-# ($'...'), backslash (outside quotes) and unterminated (an open quote at the end).
-# A here-document's body is split as if it were commands.
+# ($'...'), backslash (outside quotes), unterminated (an open quote at the end) and
+# pipe (an unquoted | that is not ||: a split, not a construct, for git_commit_text).
+# A here-document's body is printed after the command line it belongs to, one line per
+# body line, each prefixed with a word of \002 and the number of simple commands on the
+# line that opened it, and split at blanks and ; & | ( ) < > with quotes and
+# backslashes removed, so a caller can treat it as data (git_commit_text, when only
+# data readers took it) or as commands (the others). A body
+# line with $(...) or a backtick under an unquoted delimiter is flagged subst: the shell
+# runs it.
 shell_segments() {
   printf '%s' "$1" | awk '
     function flag(f) { flags[f] = 1 }
@@ -416,10 +433,29 @@ shell_segments() {
       if (hw) { gsub(/[\n\t]/, " ", w); line = line (nw ? "\037" : "") w; nw++ }
       w = ""; hw = 0
     }
-    function endseg() { endword(); if (nw) print line; line = ""; nw = 0 }
+    function endseg() { endword(); if (nw) { print line; ls++ } line = ""; nw = 0 }
+    # The bodies of the here-documents opened on the line just ended, from pos; returns
+    # the position after the last delimiter line.
+    function bodies(pos,    k, e, ln, cl, m, parts, x, out) {
+      for (k = hi + 1; k <= hn; k++) {
+        while (pos <= n) {
+          e = index(substr(s, pos), "\n")
+          ln = e ? substr(s, pos, e - 1) : substr(s, pos)
+          pos += e ? e : length(ln) + 1
+          cl = ln; if (hx[k]) sub(/^\t+/, "", cl)
+          if (cl == hd[k]) break
+          if (!hq[k] && (index(ln, "$(") || index(ln, "`"))) flag("subst")
+          m = split(ln, parts, /[ \t;&|()<>]+/); out = ""
+          for (x = 1; x <= m; x++) { gsub(/["\047\\]/, "", parts[x]); if (parts[x] != "") out = out "\037" parts[x] }
+          if (out != "") print "\002" ls out
+        }
+      }
+      hi = hn
+      return pos
+    }
     { s = s (NR > 1 ? "\n" : "") $0 }
     END {
-      n = length(s); q = ""; w = ""; hw = 0; line = ""; nw = 0
+      n = length(s); q = ""; w = ""; hw = 0; line = ""; nw = 0; hn = 0; hi = 0; ls = 0
       for (i = 1; i <= n; i++) {
         c = substr(s, i, 1); nx = substr(s, i + 1, 1)
         if (q == "\047") { if (c == "\047") q = ""; else w = w c; continue }
@@ -436,8 +472,35 @@ shell_segments() {
         if (c == "$" && nx == "(") { flag("subst"); endseg(); i++; continue }
         if (c == "#" && !hw) { flag("comment"); while (i < n && substr(s, i + 1, 1) != "\n") i++; continue }
         if (c == " " || c == "\t") { endword(); continue }
-        if (c == ";" || c == "&" || c == "|" || c == "(" || c == ")" || c == "\n") { endseg(); continue }
-        if (c == "<" || c == ">") { flag("redirect"); if (nx == "(") flag("subst"); endword(); continue }
+        if (c == "\n") { endseg(); if (hn > hi) i = bodies(i + 1) - 1; ls = 0; continue }
+        if (c == "|") { if (nx == "|") i++; else flag("pipe"); endseg(); continue }
+        if (c == ";" || c == "&" || c == "(" || c == ")") { endseg(); continue }
+        # A here-document (<< or <<-, not <<<): read its delimiter; the body follows the
+        # end of this line.
+        if (c == "<" && nx == "<" && substr(s, i + 2, 1) != "<") {
+          flag("redirect"); endword()
+          j = i + 2; dash = 0
+          if (substr(s, j, 1) == "-") { dash = 1; j++ }
+          while (j <= n && (substr(s, j, 1) == " " || substr(s, j, 1) == "\t")) j++
+          d = ""; dq = 0
+          while (j <= n) {
+            ch = substr(s, j, 1)
+            if (ch ~ /[ \t\n;&|<>()]/) break
+            if (ch == "\047" || ch == "\"") {
+              dq = 1; k = index(substr(s, j + 1), ch)
+              if (!k) { d = d substr(s, j + 1); j = n + 1; break }
+              d = d substr(s, j + 1, k - 1); j += k + 1; continue
+            }
+            if (ch == "\\") { dq = 1; d = d substr(s, j + 1, 1); j += 2; continue }
+            d = d ch; j++
+          }
+          hn++; hd[hn] = d; hq[hn] = dq; hx[hn] = dash
+          i = j - 1; continue
+        }
+        # A redirection to or from a file descriptor (2>&1, <&3, &>file) does not end the
+        # simple command.
+        if (c == "&" && nx == ">") { flag("redirect"); endword(); i++; continue }
+        if (c == "<" || c == ">") { flag("redirect"); if (nx == "(") flag("subst"); else if (nx == "&") i++; endword(); continue }
         w = w c; hw = 1
       }
       if (q != "") flag("unterminated")
@@ -467,24 +530,58 @@ shell_segments() {
 # than it shows, the plain-text rule decides instead (any `git` followed later by
 # `commit`): a command substitution, a variable as the command word,
 # eval/xargs/source/watch/parallel, an interpreter given code with -c/-e, read from
-# stdin, or given something that is not a file path.
+# stdin, or given something that is not a file path. Any other command that does not
+# only read data (csh, expect, sqlite3, vim, Rscript, sudo, ...) runs what it is given:
+# a word of it naming a git commit (`csh -c "git commit"`) is a commit, and so is a
+# here-document it reads that runs one, or, with a pipe in the command, a `git` followed
+# by `commit` anywhere in the command, with quotes removed (`echo 'git commit' | csh`).
+# git given its subcommand by xargs or parallel, or a {} one, is a commit; a
+# subcommand in a $variable is assembled at run time and is not seen (R-23). A real
+# git commit beside a construct that falls back is a commit whatever the text rule says.
 git_commit_text() {
   local cmd="$1" out verdict
   if [ "${#cmd}" -le 65536 ]; then
     out=$(shell_segments "$cmd" | awk -F'\037' '
       function base(x) { sub(/.*\//, "", x); return x }
+      # The text rule (at the end) on one line of text.
+      function text_commits(x) { return x ~ /(^|[^A-Za-z0-9_]|\\[ntr])[Gg][Ii][Tt]([^-.\/A-Za-z0-9_]|[^A-Za-z0-9_].*[^-.\/A-Za-z0-9_])commit([^A-Za-z0-9_]|$)/ }
       function names_commit(x) { return x ~ /(^|[^A-Za-z0-9_])commit([^A-Za-z0-9_]|$)/ }
       # The value of an alias.NAME=VALUE word runs a commit (or anything, with `!`).
       function alias_commits(x,  v) { v = x; sub(/^.*[Aa][Ll][Ii][Aa][Ss]\.[^=]*=/, "", v); return names_commit(v) || v ~ /^!/ }
       /^\001subst$/ { fb = 1; next }
       # $'...' can spell an alias value the text does not show.
       /^\001ansi$/ { opaque = 1; next }
+      /^\001pipe$/ { pipe = 1; next }
       /^\001/ { next }
+      # A here-document body is data when every simple command on the line that opened
+      # it only reads data or is git, which judges its own subcommand (commit -F -,
+      # tag -F -). Otherwise its lines are read as commands; a shell or interpreter on
+      # stdin, source and awk -f - also fall back below.
+      /^\002/ {
+        d = 1
+        for (x = nseg - substr($1, 2) + 1; x <= nseg; x++) if (!data[x]) d = 0
+        if (d) next
+        body = 1; $0 = substr($0, index($0, "\037") + 1)
+      }
       {
         k = 1
+        while (k < NF && $k ~ /^(if|then|else|elif|fi|do|done|while|until|!|\{|\})$/) k++
         while (k < NF && $k ~ /^[A-Za-z_][A-Za-z0-9_]*=/) k++
         if ($k ~ /\$/ || $k == ".") fb = 1
-        g = 0; seghit = 0; line = ""
+        # Commands that never run their arguments or stdin as code (not sed, which has
+        # `e`, nor sort, which has --compress-program). gh alias and gh extension define
+        # what gh runs; any other gh runs an alias or extension only after a step that
+        # wrote its config (residual, R-23).
+        cb = base($k)
+        dr = (cb ~ /^(echo|printf|cat|tee|grep|egrep|fgrep|rg|head|tail|wc|uniq|cut|tr|jq|diff|cmp|test|\[|true|:|ls|cd|gh)$/) && !(cb == "gh" && $(k + 1) ~ /^(alias|extension|extensions|ext)$/)
+        kn = dr || tolower(cb) == "git" || cb ~ /^(bash|sh|zsh|dash|ksh|fish|python[0-9.]*|perl|ruby|node|php|lua|osascript|pwsh|tclsh|deno|bun|awk|gawk|nawk|mawk)$/
+        isb = body; body = 0
+        if (!isb) { data[++nseg] = dr || tolower(cb) == "git"; if (!kn) unk = 1 }
+        # Any other command runs a code string it is given (csh -c, expect -c, sqlite3
+        # .shell, vim -c, Rscript -e, sudo csh -c): a word that names a git commit by the
+        # text rule is one.
+        if (!kn) for (j = k + 1; j <= NF; j++) if (text_commits($j)) code = 1
+        g = 0; seghit = 0; line = ""; runner = 0
         for (j = 1; j <= NF; j++) {
           b = base($j); line = line (j > 1 ? " " : "") $j
           if (b ~ /^(eval|xargs|source|watch|parallel)$/) fb = 1
@@ -494,15 +591,36 @@ git_commit_text() {
               if ($m == "-" || $m ~ /^-[A-Za-z]*[ceE][A-Za-z]*$/ || $m ~ /^--(command|eval|exec)/) fb = 1
               if (arg == "" && $m !~ /^-/) arg = $m
             }
-            if (arg == "" || arg !~ /[\/.]/) fb = 1
+            # stdin by another name is not a file the agent wrote.
+            if (arg == "" || arg !~ /[\/.]/ || arg ~ /^\/(dev\/(stdin|fd\/)|proc\/self\/fd\/)/) fb = 1
           }
+          # awk runs commands through system(), print | "cmd" and "cmd" | getline, and
+          # reads its program from stdin with -f -; env -S splits a string into a command.
+          if (b ~ /^(awk|gawk|nawk|mawk)$/) {
+            for (m = j + 1; m <= NF; m++) {
+              if ($m ~ /system|\|/) fb = 1
+              if (($m == "-f" && $(m + 1) ~ /^(-|\/dev\/(stdin|fd\/)|\/proc\/self\/fd\/)/) || $m ~ /^-f(-|\/dev\/(stdin|fd\/))/) fb = 1
+            }
+          }
+          if (b == "env") for (m = j + 1; m <= NF; m++) if ($m ~ /^-[A-Za-z]*S/ || $m ~ /^--split-string/) fb = 1
           # Config in a variable, here or in an earlier export.
           if ($j ~ /^GIT_CONFIG(_GLOBAL|_SYSTEM|_COUNT|_KEY_[0-9]+|_VALUE_[0-9]+)?=/) opaque = 1
           if ($j ~ /^GIT_CONFIG_PARAMETERS=/ && $j ~ /\$/) opaque = 1
           if ($j ~ /^GIT_CONFIG_PARAMETERS=/ && tolower($j) ~ /alias\./) { if (alias_commits($j)) cfgc = 1; else opaque = 1 }
-          # GIT, Git, /usr/bin/GIT: a case-insensitive disk runs git for each.
-          if (tolower(b) == "git" && !g) { g = 1; gi = j }
-          else if (g && $j !~ /[ \t]/ && names_commit($j)) seghit = 1
+          # GIT, Git, /usr/bin/GIT: a case-insensitive disk runs git for each. Every git
+          # word counts (sudo -u git git commit, find -name git -exec git commit), and for
+          # each the commit is its subcommand, the first word after its global options:
+          # a file name (pre-commit-checks.sh) or a pathspec naming commit is not one.
+          if (tolower(b) == "git") {
+            if (!g) { g = 1; gi = j }
+            m = j + 1
+            while (m <= NF && $m ~ /^-/) { if ($m ~ /^(-C|-c|--git-dir|--work-tree|--namespace|--config-env|--super-prefix|--attr-source)$/) m++; m++ }
+            if (m <= NF && names_commit($m)) seghit = 1
+            # A subcommand xargs or parallel supplies from input (xargs git), or a {} one
+            # (xargs -I{} git {}, find -exec git {}).
+            if ((runner && m > NF) || (m <= NF && $m ~ /\{\}/)) code = 1
+          }
+          if (b ~ /^(xargs|parallel)$/) runner = 1
         }
         if (g) {
           # The subcommand: the first word after git and its global options.
@@ -524,9 +642,14 @@ git_commit_text() {
         }
         if (seghit) { hit = 1; text = text line "\n" }
         if (g) gtext = gtext line "\n"
+        if (!isb) words = words " " line
       }
       END {
-        if (fb) print "fallback"
+        # A pipe into a command that is not a known reader: the text rule on the whole
+        # command with quotes removed.
+        if (pipe && unk && text_commits(words)) code = 1
+        if (code || (fb && hit)) print "code"
+        else if (fb) print "fallback"
         else if (hit) printf "commit\n%s", text
         else if ((cfgc || opaque) && scs != "") printf "cfg\n%s\n%s", scs, gtext
         else print "none"
@@ -537,6 +660,7 @@ git_commit_text() {
   fi
   case "$verdict" in
     commit) printf '%s\n' "${out#*$'\n'}"; return 0 ;;
+    code) printf '%s\n' "$cmd"; return 0 ;;
     none) return 1 ;;
     cfg)
       # Config that can define an alias: a commit when git runs a subcommand that
@@ -547,7 +671,10 @@ git_commit_text() {
         git_name_can_alias "${pair#*$'\037'}" "${pair%%$'\037'*}" && { printf '%s\n' "$text"; return 0; }
       done <<< "$(printf '%s' "$scs" | tr '\036' '\n')"
       return 1 ;;
-    *) grep -qE '\b[Gg][Ii][Tt]\b.*\bcommit\b' <<< "$cmd" && printf '%s\n' "$cmd" ;;
+    # The text rule: a git and, later on the same line, commit as a word of its own
+    # (not pre-commit, hooks/commit-msg or .commit). A \n, \t or \r escape before git
+    # is a boundary too: printf turns it into a newline or a blank (printf '\tgit commit').
+    *) grep -qE '(^|[^[:alnum:]_]|\\[ntr])[Gg][Ii][Tt]\b.*(^|[^-./[:alnum:]_])commit\b' <<< "$cmd" && printf '%s\n' "$cmd" ;;
   esac
 }
 
@@ -718,20 +845,58 @@ git_sets_code_config() {
 # without -O); git add with no option but `--`. Anything the
 # split cannot follow refuses: substitution, a backslash, a comment, $'...', an open
 # quote, and any redirection except fd duplication (2>&1) and /dev/null.
-command_only_reads() {
+command_only_reads() { [ -z "$(command_read_problem "$1")" ]; }
+
+# Print what keeps a Bash command from being read-only (command_only_reads): the first
+# simple command that is not allowed, or the construct the split cannot follow; print
+# nothing when every simple command only reads or stages. Besides the commands listed
+# above: find without an action that runs or writes (-exec, -execdir, -ok, -okdir,
+# -delete, -fprint*, -fls); cmp; diff; test and [; the shell keywords that only open
+# or close a compound command (if, then, else, elif, fi, do, done, while, until, !,
+# { and }), the command after them judged on its own; a `for NAME in WORDS` head; and
+# a simple command made only of assignments, except to a name that changes what a
+# later read runs or how (PATH, IFS, the GIT_*, LD_*, DYLD_* and pager variables, ...).
+# An assignment in front of a command still refuses.
+command_read_problem() {
   local cmd="$1" prev=""
-  [ "${#cmd}" -le 16384 ] || return 1
-  case "$cmd" in *\\*) return 1 ;; esac
+  [ "${#cmd}" -le 16384 ] || { echo "a command longer than 16384 characters"; return 0; }
+  case "$cmd" in *\\*) echo "a backslash"; return 0 ;; esac
   while [ "$cmd" != "$prev" ]; do
     prev="$cmd"
     cmd=$(sed -E 's#(^|[[:space:]])[0-9]?(>&[0-9]|>>?[[:space:]]*/dev/null)([[:space:];&|)]|$)#\1\3#g' <<< "$cmd")
   done
-  [ "$(shell_segments "$cmd" | awk -F'\037' '
-    /^\001/ { bad = 1; next }
+  shell_segments "$cmd" | awk -F'\037' '
+    function show(   x, t) { t = ""; for (x = 1; x <= NF; x++) t = t (x > 1 ? " " : "") $x; return t }
+    /^\001pipe$/ { next }
+    /^\001/ {
+      f = substr($0, 2)
+      if (f == "subst") why = "a command substitution"
+      else if (f == "redirect") why = "a redirection or here-document"
+      else if (f == "ansi") why = "a $'\''...'\'' string"
+      else if (f == "unterminated") why = "an open quote"
+      else why = "a " f
+      if (bad == "") bad = why
+      next
+    }
+    /^\002/ { if (bad == "") bad = "a here-document"; next }
     {
+      nseg++
+      # Keywords that only open or close a compound command: judge what follows.
+      while (NF > 0 && $1 ~ /^(if|then|else|elif|fi|do|done|while|until|!|\{|\})$/) { sub(/^[^\037]*\037?/, "") }
+      if (NF == 0) next
       ok = 0; c = $1
-      if (c == "cd") ok = (NF <= 2)
-      else if (c ~ /^(cat|head|tail|more|wc|file|stat|ls|grep|jq|echo|pwd|true)$/) ok = 1
+      if (c == "for") ok = (NF == 2 || (NF >= 3 && $3 == "in"))
+      else if (c ~ /^[A-Za-z_][A-Za-z0-9_]*=/) {
+        ok = 1
+        for (j = 1; j <= NF; j++) {
+          if ($j !~ /^[A-Za-z_][A-Za-z0-9_]*=/) ok = 0
+          nm = $j; sub(/=.*/, "", nm)
+          if (nm ~ /^(PATH|HOME|IFS|CDPATH|ENV|BASH_ENV|SHELL|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|EDITOR|VISUAL|PAGER|MANPAGER|MORE|TMPDIR|LESS.*|GIT_.*|LD_.*|DYLD_.*|XDG_.*|BASH_FUNC_.*|PYTHON.*|PERL.*|RUBY.*|NODE_.*|JQ_.*|GREP_.*|RIPGREP_CONFIG_PATH|BAT_.*|CLAUDE.*)$/) ok = 0
+        }
+      }
+      else if (c == "cd") ok = (NF <= 2)
+      else if (c ~ /^(cat|head|tail|more|wc|file|stat|ls|grep|jq|echo|pwd|true|cmp|diff|test|\[)$/) ok = 1
+      else if (c == "find") { ok = 1; for (j = 2; j <= NF; j++) if ($j ~ /^-(exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)$/) ok = 0 }
       else if (c == "rg") { ok = 1; for (j = 2; j <= NF; j++) if ($j ~ /^--pre(=|$)/) ok = 0 }
       else if (c == "sed") {
         ok = ($2 == "-n" && $3 ~ /^([0-9]+|\$)(,([0-9]+|\$))?p$/)
@@ -745,9 +910,9 @@ command_only_reads() {
         }
       }
       else if (c == "git" && $2 == "add") { ok = 1; for (j = 3; j <= NF; j++) if ($j ~ /^-/ && $j != "--") ok = 0 }
-      if (!ok) bad = 1
+      if (!ok && bad == "") bad = show()
     }
-    END { print (bad || NR == 0 ? "no" : "yes") }')" = yes ]
+    END { if (bad == "" && nseg == 0) bad = "no command"; if (bad != "") print bad }'
 }
 
 # True when COMMAND is a lone invocation of the project's own mark-plan-closed.sh.

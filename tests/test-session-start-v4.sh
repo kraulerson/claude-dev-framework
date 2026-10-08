@@ -184,6 +184,8 @@ test_directive_names_sanctioned_scripts() {
   assert_not_contains "$RESULT" "mark-evaluated.sh" "the directive no longer offers mark-evaluated.sh to the agent"
   assert_not_contains "$RESULT" "Markers are created automatically" "directive must not claim every marker is automatic"
   assert_contains "$RESULT" "never create one yourself" "directive should forbid creating a marker"
+  assert_contains "$RESULT" 'a lone `git commit -m' "directive states the lone-commit rule (dogfood-3 row 14a)"
+  assert_contains "$RESULT" "no cd" "directive says a cd prefix breaks it"
   rm -f "/tmp/.claude_last_head_${TEST_HASH}"
   teardown_test_project
 }
@@ -209,6 +211,41 @@ test_superpowers_status_follows_config_dir() {
   teardown_test_project
 }
 
+# --- Test (dogfood-3 row 21): the Context7 status is read where this session's settings
+# live — $CLAUDE_CONFIG_DIR when set (its settings.json and its .claude.json, where
+# `claude mcp add -s user` writes) — not ~/.claude ---
+test_context7_status_follows_config_dir() {
+  local cfg
+  setup_test_project
+  cfg=$(mktemp -d)
+  echo '{"mcpServers":{"context7":{"type":"http"}}}' > "$HOME/.claude.json"
+  export CLAUDE_CONFIG_DIR="$cfg"
+  RESULT=$(run_hook "$HOOK" '{"source":"startup"}')
+  assert_contains "$RESULT" "Context7 not installed" "~/.claude.json does not count when CLAUDE_CONFIG_DIR points elsewhere"
+  echo '{"mcpServers":{"context7":{"type":"http"}}}' > "$cfg/.claude.json"
+  RESULT=$(run_hook "$HOOK" '{"source":"startup"}')
+  assert_contains "$RESULT" "Context7 ready" "registered in CLAUDE_CONFIG_DIR/.claude.json is ready"
+  unset CLAUDE_CONFIG_DIR
+  rm -rf "$cfg" "$HOME/.claude.json"
+  teardown_test_project
+}
+
+# --- Test (dogfood-3 row 22): an overdue discovery review says to run init.sh
+# --reconfigure only in a project init.sh made. In a Solo-adopted project (manifest
+# adoption.adopted) init.sh --reconfigure would rewrite the whole manifest, dropping
+# Solo's adoption record and the project's sourceExtensions, so it is not suggested ---
+test_discovery_review_not_for_adopted() {
+  setup_test_project
+  jq '.discovery = {lastReviewDate: "2026-01-01"}' "$TEST_DIR/.claude/manifest.json" > "$TEST_DIR/m" && mv "$TEST_DIR/m" "$TEST_DIR/.claude/manifest.json"
+  RESULT=$(run_hook "$HOOK" '{"source":"startup"}')
+  assert_contains "$RESULT" "init.sh --reconfigure" "an init.sh project is told to review"
+  jq '.adoption = {schemaVersion: 2, adopted: true}' "$TEST_DIR/.claude/manifest.json" > "$TEST_DIR/m" && mv "$TEST_DIR/m" "$TEST_DIR/.claude/manifest.json"
+  RESULT=$(run_hook "$HOOK" '{"source":"startup"}')
+  assert_not_contains "$RESULT" "init.sh --reconfigure" "an adopted project is not sent to init.sh"
+  assert_not_contains "$RESULT" "Discovery review overdue" "an adopted project gets no discovery-review warning"
+  teardown_test_project
+}
+
 echo "session-start.sh (v4 rewrite)"
 test_has_directive
 test_has_zones
@@ -227,4 +264,6 @@ test_resume_preserves_plan_closed
 test_compact_preserves_plan_closed
 test_directive_names_sanctioned_scripts
 test_superpowers_status_follows_config_dir
+test_context7_status_follows_config_dir
+test_discovery_review_not_for_adopted
 run_tests

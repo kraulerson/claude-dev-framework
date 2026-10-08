@@ -18,6 +18,8 @@ export HOME="$TEST_LAB_HOME"
 # Hermetic: when the suite itself runs under Claude Code, CLAUDECODE=1 is inherited, and
 # mark-evaluated.sh refuses under it by design. Tests that need it set it themselves.
 unset CLAUDECODE
+# Likewise CLAUDE_CONFIG_DIR: it moves where the user settings are read (plugins, Context7).
+unset CLAUDE_CONFIG_DIR
 trap 'rm -rf "$TEST_LAB_HOME"' EXIT
 
 # Create a temporary git repo with a basic manifest for testing

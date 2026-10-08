@@ -24,7 +24,7 @@ test_clears_session_markers() {
   touch "/tmp/.claude_approval_shown_${TEST_HASH}"
 
   run_hook "$HOOK" '{}' >/dev/null 2>&1
-  assert_file_not_exists "/tmp/.claude_approval_shown_${TEST_HASH}" "clears the approval render record"
+  assert_file_exists "/tmp/.claude_approval_shown_${TEST_HASH}" "keeps the approval render record (bound to its session; a --resume reply picks)"
 
   assert_file_not_exists "/tmp/.claude_superpowers_${TEST_HASH}" "clears superpowers"
   assert_file_not_exists "/tmp/.claude_evaluated_${TEST_HASH}" "clears evaluated"

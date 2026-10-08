@@ -80,12 +80,16 @@ if grep -qE 'CLAUDE_PROJECT_DIR=' <<< "$COMMAND"; then
   guard_block
 fi
 
+# find on the bare .claude folder with an action that deletes, runs a command or writes
+# (`find .claude -name settings.json -delete` removes the hooks' registration).
+FIND_ACTION_ON_CLAUDE_RE='\bfind\b[^|;&]*[[:space:]]["'"'"']?(\./)?\.claude["'"'"']?([[:space:]/][^|;&]*)?-(delete|exec|execdir|ok|okdir|fprint0?|fprintf|fls)([[:space:]]|$)'
 # Destructive commands aimed at .claude itself — e.g. `rm -rf .claude`, `rm -rf .claude/`,
 # `rm -rf .claude/*`, `mv .claude/ /tmp/x`. A trailing `/` is in the terminating char
 # class so `.claude` followed by a slash (bare dir, glob, or subpath) is caught, while
 # `.claude-backup` (next char `-`) is not.
 if grep -qiE '\b(rm|mv|chmod|chown|rmdir)\b[^|;&]*[[:space:]]["'"'"']?(\./)?\.claude["'"'"']?([[:space:]/]|$)' <<< "$COMMAND" \
-   || grep -qiE '\b(rm|mv|chmod|chown|rmdir)\b[^|;&]*[[:space:]]["'"'"']?(\./)?\.claude["'"'"']?([[:space:]/]|$)' <<< "$NORM_COMMAND"; then
+   || grep -qiE '\b(rm|mv|chmod|chown|rmdir)\b[^|;&]*[[:space:]]["'"'"']?(\./)?\.claude["'"'"']?([[:space:]/]|$)' <<< "$NORM_COMMAND" \
+   || grep -qiE "$FIND_ACTION_ON_CLAUDE_RE" <<< "$COMMAND" || grep -qiE "$FIND_ACTION_ON_CLAUDE_RE" <<< "$NORM_COMMAND"; then
   printf "BLOCKED — Modification of the .claude directory is not permitted. Framework hooks and configuration are managed by the framework, not by Claude.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second.\n" >&2
   guard_block
 fi
@@ -111,11 +115,64 @@ if grep -qiE "$STATE_HOOKS_RE" <<< "$COMMAND" \
   guard_block
 fi
 
-# Check if command references framework config or hook paths (CONFIG_GUARD_PROTECTED_RE
-# in _helpers.sh: the config files, framework/hooks/, and the bare .claude/framework
-# and .claude/framework/hooks directories, in any letter case)
-if grep -qiE "$CONFIG_GUARD_PROTECTED_RE" <<< "$COMMAND" \
-   || grep -qiE "$CONFIG_GUARD_PROTECTED_RE" <<< "$NORM_COMMAND"; then
+# Check if command names framework config or hook paths (CONFIG_GUARD_PROTECTED_RE in
+# _helpers.sh: the config files, framework/hooks/, the bare .claude/framework and
+# .claude/framework/hooks directories, the approval audit and git's hooks, config and
+# info, in any letter case). The words the shell will see are read (shell_segments:
+# quotes removed), each with `//`, `/./` and `x/../` collapsed.
+#
+# Prose (dogfood-3 rows 5, 13, 14b): in the arguments of a command that only takes
+# text — echo, printf, git commit/log/show/tag with no -c or --config-env, or a shell
+# or interpreter running a script file (bash scripts/x.sh "…") — a protected path
+# counts only where it is a path: at the start of a word or after a character that is
+# no part of a name in prose
+# (/ = : , @ { …), so "/Users/me/Claude Projects/p/.claude/settings.json" and
+# --output=.claude/… still count, while "(Stage .claude/framework/…" or "Refreshes
+# .claude/framework via" in a question or a commit message does not (that word names a
+# folder called "a .claude", never the project's .claude). Everywhere else — sed's
+# `w file`, awk, bash -c, find -exec, git grep -O, a here-document — text is code or a
+# target, so any occurrence counts, as before. So does every word with a `$` (an $IFS
+# can split it at run time) and every line that could change what those command names
+# run: an assignment in front of them, a function, alias, export, declare, typeset,
+# hash, enable, eval or source anywhere in the call. A line the split cannot follow
+# (substitution, backslash, $'...', an open quote, a comment), a very long one, or an
+# older _helpers.sh: the whole text, as before.
+WORDS=""
+names_protected_path() {
+  local segs strict_line=0
+  if type shell_segments >/dev/null 2>&1 && [ "${#COMMAND}" -le 65536 ]; then
+    segs=$(shell_segments "$COMMAND")
+    if ! grep -qE $'^\001(subst|backslash|ansi|unterminated|comment)$' <<< "$segs"; then
+      grep -qE '(^|[^[:alnum:]_])(alias|function|export|declare|typeset|readonly|hash|enable|eval|source)([^[:alnum:]_]|$)|[[:alnum:]_][[:space:]]*\([[:space:]]*\)' <<< "$COMMAND" && strict_line=1
+      WORDS=$(awk -F'\037' -v strict="$strict_line" '
+        /^\001/ { next }
+        /^\002/ { for (j = 2; j <= NF; j++) print "S\t" $j; next }
+        {
+          k = 1; pre = 0
+          while (k <= NF && $k ~ /^(if|then|else|elif|fi|do|done|while|until|!|\{|\})$/) k++
+          while (k <= NF && $k ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { k++; pre = 1 }
+          c = $k; r = 0
+          if (c == "echo" || c == "printf") r = 1
+          else if (c == "git") {
+            # Config given with the command (-c, --config-env) can name a program.
+            m = k + 1; cfg = 0
+            while (m <= NF && $m ~ /^-/) { if ($m ~ /^(-c|--config-env)/) cfg = 1; if ($m ~ /^(-C|-c|--git-dir|--work-tree|--namespace|--config-env|--super-prefix|--attr-source)$/) m++; m++ }
+            if ($m ~ /^(commit|log|show|tag)$/ && !cfg) r = 1
+          }
+          else if (c ~ /^(bash|sh|zsh|dash|ksh|python[0-9.]*|node|ruby|perl)$/ && $(k + 1) ~ /[\/.]/ && $(k + 1) !~ /^-/ && $(k + 1) !~ /^\/(dev|proc)\//) r = 1
+          if (strict || pre) r = 0
+          for (j = 1; j <= NF; j++) print ((r && $j !~ /\$/) ? "R" : "S") "\t" $j
+        }' <<< "$segs")
+      WORDS=$(normalize_command_paths "$WORDS")
+      grep -qiE "^R"$'\t'"(.*[^[:alnum:][:space:]_.(-])?(${CONFIG_GUARD_PROTECTED_RE})" <<< "$WORDS" \
+        || grep -qiE "^S"$'\t'".*(${CONFIG_GUARD_PROTECTED_RE})" <<< "$WORDS"
+      return
+    fi
+  fi
+  WORDS="$NORM_COMMAND"
+  grep -qiE "$CONFIG_GUARD_PROTECTED_RE" <<< "$COMMAND" || grep -qiE "$CONFIG_GUARD_PROTECTED_RE" <<< "$NORM_COMMAND"
+}
+if names_protected_path; then
   # Every such path is a literal path into a temp fixture, not the project's (#11).
   all_protected_paths_foreign "$COMMAND" && guard_allow
   # The project's own mark-evaluated.sh / mark-plan-closed.sh, as a lone invocation
@@ -138,7 +195,11 @@ if grep -qiE "$CONFIG_GUARD_PROTECTED_RE" <<< "$COMMAND" \
     MARK_HINT="$MARK_HINT mark-evaluated.sh is the user's own override, run in their separate terminal; you cannot run it. To get a commit approved: stage the change, record the question in .claude/pending-approval.json (schema 2; see the enforce-evaluate block message for the exact shape) and stop. The user approves by replying with the option id."
   fi
   case "$NORM_COMMAND" in *.git/info/exclude*|*.GIT/INFO/EXCLUDE*) MARK_HINT="$MARK_HINT To ignore files, edit .gitignore instead." ;; esac
-  printf "BLOCKED — Modification of framework files via Bash is not permitted. Framework hooks and configuration are managed by the framework, not by Claude. Inspection may chain only read-only commands (cat, head, tail, ls, grep, jq, sed -n N,Mp, git diff/log/show/status, cd) and plain git add, with no substitution and no redirection except 2>&1 or /dev/null; use the Read tool to view these files.%s\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second.\n" "$MARK_HINT" >&2
+  # Name the path and the part that is not read-only (dogfood-3 rows 1, 19).
+  NAMED=$(grep -m1 -oiE "$CONFIG_GUARD_PROTECTED_RE" <<< "$WORDS" || true)
+  PART=""
+  type command_read_problem >/dev/null 2>&1 && PART=$(command_read_problem "$COMMAND" || true)
+  printf "BLOCKED — This command names the framework path %s and also contains %s, which is not read-only. Framework hooks and configuration are managed by the framework, not by Claude. A command that names framework config, hooks, the approval audit or git's hooks, config or info may chain only read-only commands (cat, head, tail, ls, grep, jq, find without -exec/-delete, cmp, diff, sed -n N,Mp, git diff/log/show/status, cd, if/for around them) and plain git add, with no substitution and no redirection except 2>&1 or /dev/null. Anything else in the same call — a script run such as bash scripts/x.sh, a write, a redirection — refuses the whole line: run it as a separate Bash call. Use the Read tool to view these files.%s\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second.\n" "${NAMED:-(see the command)}" "${PART:-a command}" "$MARK_HINT" >&2
   guard_block
 fi
 

@@ -182,6 +182,33 @@ test_withdrawal_fails_closed() {
   rm -rf "$shim"
 }
 
+# --- Test (dogfood-3 item 1): the two replies survive a process exit. A headless driver
+# sends each reply as its own `claude -p --resume <id>` process, so SessionEnd runs after
+# the render and SessionStart (resume, or startup in some versions) before the pick, both
+# with the same session_id. The render record is bound to that session, so it is kept;
+# a different session's startup still clears it ---
+test_render_survives_session_end_and_resume() {
+  local src
+  for src in resume startup; do
+    setup_test_project; stage_change; write_v2
+    run_hook "$HOOK" "$(ups_input "A1")" >/dev/null
+    run_hook "$HOOK_DIR/session-end.sh" '{"session_id":"sess-1","hook_event_name":"SessionEnd","reason":"other"}' >/dev/null
+    run_hook "$HOOK_DIR/session-start.sh" "{\"session_id\":\"sess-1\",\"hook_event_name\":\"SessionStart\",\"source\":\"$src\"}" >/dev/null
+    RESULT=$(run_hook "$HOOK" "$(ups_input "A1")")
+    assert_equals "" "$(decision "$RESULT")" "$src: the second A1 after a process exit is not re-rendered"
+    assert_file_exists "$(marker)" "$src: the second A1 after a process exit approves"
+    teardown_test_project
+  done
+  setup_test_project; stage_change; write_v2
+  run_hook "$HOOK" "$(ups_input "A1")" >/dev/null
+  run_hook "$HOOK_DIR/session-start.sh" '{"session_id":"sess-2","hook_event_name":"SessionStart","source":"startup"}' >/dev/null
+  assert_file_not_exists "$(shown)" "another session's startup clears the render record"
+  RESULT=$(run_hook "$HOOK" "$(ups_input "A1" sess-2)")
+  assert_equals "block" "$(decision "$RESULT")" "the new session's A1 renders again"
+  assert_file_not_exists "$(marker)" "and approves nothing"
+  teardown_test_project
+}
+
 # --- Test (spec 4): anything that changed since the render voids it; the reply re-renders ---
 test_changes_void_the_render() {
   local change
@@ -349,6 +376,7 @@ test_second_pick_approves
 test_non_approving_pick
 test_non_approving_pick_withdraws_approval
 test_withdrawal_fails_closed
+test_render_survives_session_end_and_resume
 test_changes_void_the_render
 test_neutral_turns
 test_non_picks

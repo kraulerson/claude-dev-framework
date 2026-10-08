@@ -4,6 +4,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/helpers/assert.sh"
 
 HELPERS="$(cd "$SCRIPT_DIR/.." && pwd)/hooks/_helpers.sh"
+# Hermetic: a CLAUDE_CONFIG_DIR inherited from the shell running the suite would move
+# where the user settings are read. Tests that need it set it themselves.
+unset CLAUDE_CONFIG_DIR
 
 # check_context7 reads $HOME/.claude/settings.json and $HOME/.claude.json — we
 # redirect HOME at a temp dir per test so real user configs don't leak in.
@@ -114,6 +117,27 @@ test_multiple_paths_any_wins() {
 }
 
 # --- Run all tests ---
+# --- Test (dogfood-3 row 21): with CLAUDE_CONFIG_DIR set, the user settings and the user
+# .claude.json are read there, not under ~ ---
+test_follows_config_dir() {
+  local cfg
+  setup_fake_home
+  cfg=$(mktemp -d)
+  echo '{"mcpServers":{"context7":{"type":"http"}}}' > "$FAKE_HOME/.claude.json"
+  echo '{"mcpServers":{"context7":{"type":"http"}}}' > "$FAKE_HOME/.claude/settings.json"
+  EXIT=$(CLAUDE_CONFIG_DIR="$cfg" run_check)
+  assert_equals "1" "$EXIT" "~ does not count when CLAUDE_CONFIG_DIR points elsewhere"
+  echo '{"mcpServers":{"context7":{"type":"http"}}}' > "$cfg/.claude.json"
+  EXIT=$(CLAUDE_CONFIG_DIR="$cfg" run_check)
+  assert_equals "0" "$EXIT" "CLAUDE_CONFIG_DIR/.claude.json counts"
+  rm -f "$cfg/.claude.json"
+  echo '{"enabledPlugins":{"context7@claude-plugins-official":true}}' > "$cfg/settings.json"
+  EXIT=$(CLAUDE_CONFIG_DIR="$cfg" run_check)
+  assert_equals "0" "$EXIT" "a plugin enabled in CLAUDE_CONFIG_DIR/settings.json counts"
+  rm -rf "$cfg"
+  teardown_fake_home
+}
+
 echo "check_context7 (_helpers.sh)"
 test_no_config_returns_1
 test_mcp_in_settings_json
@@ -125,4 +149,5 @@ test_unrelated_settings_returns_1
 test_regex_tight_anchoring
 test_plugin_case_insensitive
 test_multiple_paths_any_wins
+test_follows_config_dir
 run_tests

@@ -19,6 +19,30 @@ setup_stop_test() {
   git -C "$TEST_DIR" commit -m "chore: track .claude manifest" --quiet
 }
 
+# --- Test (dogfood-3 rows 15, 20): framework-written audit logs are not source. The owner
+# ruled (2026-10-07) that .claude/approvals.jsonl (record-approval, marker-tracker) and
+# .claude/tdd-warn-ledger.jsonl (Solo's pre-commit gate) stay tracked audit trails, so
+# CDF's check must not count them; JSON Lines is data, like .json and .csv ---
+test_audit_logs_are_not_source() {
+  setup_stop_test
+  printf '{"event":"approval"}\n' > "$TEST_DIR/.claude/approvals.jsonl"
+  printf '{"w":1}\n' > "$TEST_DIR/.claude/tdd-warn-ledger.jsonl"
+  echo '{}' > "$TEST_DIR/.claude/tool-usage.json"
+  echo abc > "$TEST_DIR/.claude/last-checked-commit.txt"
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  assert_not_contains "$RESULT" "Uncommitted source changes" "untracked audit logs are not uncommitted source"
+  git -C "$TEST_DIR" add .claude; git -C "$TEST_DIR" commit -qm "chore: track audit"
+  printf '{"event":"commit"}\n' >> "$TEST_DIR/.claude/approvals.jsonl"
+  rm -f /tmp/.claude_stop_errors_hash_${TEST_HASH}_*
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  assert_not_contains "$RESULT" "Uncommitted source changes" "a modified tracked audit log is not uncommitted source"
+  echo "x = 1" > "$TEST_DIR/app.py"
+  rm -f /tmp/.claude_stop_errors_hash_${TEST_HASH}_*
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  assert_contains "$RESULT" "Uncommitted source changes" "real source next to them still blocks"
+  teardown_test_project
+}
+
 # --- Test: stop_hook_active=true short-circuits (loop guard) ---
 test_stop_hook_active_short_circuits() {
   setup_stop_test
@@ -265,4 +289,5 @@ test_planning_advisory_names_the_script
 test_planning_advisory_absent_after_marking
 test_no_output_when_no_advisory_remains
 test_handoff_advisory_survives_closure
+test_audit_logs_are_not_source
 run_tests
