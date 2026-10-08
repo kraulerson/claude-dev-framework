@@ -575,15 +575,24 @@ git_commit_text() {
         cb = base($k)
         dr = (cb ~ /^(echo|printf|cat|tee|grep|egrep|fgrep|rg|head|tail|wc|uniq|cut|tr|jq|diff|cmp|test|\[|true|:|ls|cd|gh)$/) && !(cb == "gh" && $(k + 1) ~ /^(alias|extension|extensions|ext)$/)
         kn = dr || tolower(cb) == "git" || cb ~ /^(bash|sh|zsh|dash|ksh|fish|python[0-9.]*|perl|ruby|node|php|lua|osascript|pwsh|tclsh|deno|bun|awk|gawk|nawk|mawk)$/
+        # A script file of the project run by path (scripts/pending-approval.sh) is like
+        # `bash scripts/x.sh`: its arguments are text (an approval question about a
+        # commit). It counts only when the path is relative to the session folder, which
+        # Claude Code keeps in the project: no leading / or ~, no .. and no cd, pushd or
+        # popd in the command (moved, at the end); and only with a script extension, so
+        # a copied runner (cp /bin/csh ./c) or node_modules/.bin/tsx stays a code runner.
+        # A script the agent wrote can commit without showing it (R-23).
+        sp = !kn && $k ~ /\// && $k !~ /^[\/~]/ && $k !~ /(^|\/)\.\.(\/|$)/ && cb ~ /\.(sh|bash|zsh|py|rb|pl|js|mjs|cjs|ts|php)$/
         isb = body; body = 0
-        if (!isb) { data[++nseg] = dr || tolower(cb) == "git"; if (!kn) unk = 1 }
+        if (!isb) { data[++nseg] = dr || tolower(cb) == "git"; if (!kn) { if (sp) spunk = 1; else unk = 1 } }
         # Any other command runs a code string it is given (csh -c, expect -c, sqlite3
         # .shell, vim -c, Rscript -e, sudo csh -c): a word that names a git commit by the
         # text rule is one.
-        if (!kn) for (j = k + 1; j <= NF; j++) if (text_commits($j)) code = 1
+        if (!kn) for (j = k + 1; j <= NF; j++) if (text_commits($j)) { if (sp) spcode = 1; else code = 1 }
         g = 0; seghit = 0; line = ""; runner = 0
         for (j = 1; j <= NF; j++) {
           b = base($j); line = line (j > 1 ? " " : "") $j
+          if (b ~ /^(cd|pushd|popd)$/) moved = 1
           if (b ~ /^(eval|xargs|source|watch|parallel)$/) fb = 1
           if (b ~ /^(bash|sh|zsh|dash|ksh|fish|python[0-9.]*|perl|ruby|node|php|lua|osascript|pwsh|tclsh|deno|bun)$/) {
             arg = ""
@@ -645,6 +654,8 @@ git_commit_text() {
         if (!isb) words = words " " line
       }
       END {
+        # After a cd a script path may name any file: judge it as a code runner.
+        if (moved) { if (spcode) code = 1; if (spunk) unk = 1 }
         # A pipe into a command that is not a known reader: the text rule on the whole
         # command with quotes removed.
         if (pipe && unk && text_commits(words)) code = 1

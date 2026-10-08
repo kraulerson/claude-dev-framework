@@ -752,6 +752,70 @@ CMDS
   teardown_test_project
 }
 
+# --- Test (4.4.3): a script run by a relative path is a file the agent runs, not a code
+# runner: the approval question about a commit, run as Solo's builders-guide says, and
+# its output piped on, are not commits ---
+test_script_run_by_path_passes() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input "$cmd")")
+    assert_exit_code "0" "$EXIT_CODE" "not a commit: $cmd"
+  done << 'CMDS'
+scripts/pending-approval.sh --offer "Stage then git commit the fix" --option "A1:approve"
+./scripts/pending-approval.sh --offer "Stage then git commit the fix"
+bash scripts/pending-approval.sh --offer "Stage then git commit the fix"
+./scripts/escalate-to-user.sh --question "OK to git commit?"
+./scripts/pending-approval.sh --offer "Stage then git commit the fix" 2>&1 | tail -3
+scripts/run-checks.py --note "before git commit"
+CMDS
+  teardown_test_project
+}
+
+# --- Test (4.4.3): a code runner named by an absolute path is still judged as one ---
+test_absolute_path_runners_block() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "a commit must block: $cmd"
+  done << 'CMDS'
+/bin/csh -c "git commit -m x"
+/usr/bin/expect -c "exec git commit -m x"
+echo 'git commit -m x' | /bin/csh
+csh -c "git commit -m x"
+echo 'git commit -m x' | csh
+CMDS
+  teardown_test_project
+}
+
+# --- Test (4.4.3 review): only a script file under the session's folder counts as a
+# script run: a path that climbs with .. or starts at ~, a runner with no script
+# extension (a copy of csh, node_modules/.bin/tsx) and a path after cd are judged as
+# code runners ---
+test_script_path_limits_block() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "a commit must block: $cmd"
+  done << 'CMDS'
+../../../../../../../../bin/csh -c "git commit -m x"
+~/../../bin/csh -c "git commit -m x"
+echo "git commit -m x" | ../../../../../../../../bin/csh
+cd / && usr/bin/expect -c "exec git commit -m x"
+./../bin/csh -c "git commit -m x"
+node_modules/.bin/tsx -e "require('child_process').execSync('git commit -m x')"
+cp /bin/csh ./c; ./c -c 'git commit -m x'
+cd /usr/bin && ./scandeps.pl -x -e 'system("git commit -m x")'
+../../../../../../../../usr/bin/scandeps.pl -x -e 'system("git commit -m x")'
+~/../../usr/bin/scandeps.pl -x -e 'system("git commit -m x")'
+~/bin/runner.py -c "git commit -m x"
+/usr/bin/scandeps.pl -x -e 'system("git commit -m x")'
+CMDS
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "enforce-evaluate.sh"
 test_non_commit_passthrough
@@ -783,4 +847,7 @@ test_heredoc_code_readers_block
 test_code_strings_block
 test_data_readers_pass
 test_hidden_commit_forms_block
+test_script_run_by_path_passes
+test_absolute_path_runners_block
+test_script_path_limits_block
 run_tests
