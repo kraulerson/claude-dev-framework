@@ -61,7 +61,7 @@ The script auto-detects existing config and enters migration mode:
 3. **REPORT** — shows findings
 4. **BACKUP** — creates `.claude-backup/{timestamp}/` with restore script
 5. **PLUGIN CHECK** — verifies Superpowers
-6. **INSTALL** — merges framework (only touches `hooks` key in settings.json)
+6. **INSTALL** — merges framework (only touches `hooks` and `permissions.deny` in settings.json; the project's own hooks are kept)
 7. **VERIFY** — confirms installation
 
 ## Multi-Machine Setup
@@ -85,6 +85,10 @@ cd ~/your-project && bash ~/.claude-dev-framework/scripts/sync.sh
 ```
 
 The sync script compares file hashes, preserves local modifications, and handles conflicts interactively. Without a TTY (CI, agent sessions), prompts take safe defaults instead: sync keeps the local version of conflicted files, `detect-profile.sh` accepts the auto-detected profile (or exits non-zero when nothing is detected — pass `init.sh --profile <name>`), the discovery interview records empty discovery (use `--prepopulate` or re-run `init.sh --reconfigure` interactively), and `push-up.sh` refuses to run. Piped stdin counts as no-TTY: scripted answers are ignored in favor of these defaults.
+
+Sync then re-registers the framework hooks in `.claude/settings.json` (`merge_hooks_into_settings` in `scripts/_shared.sh`; `init.sh` and `migrations/v4.sh` use the same merge). A hook command containing `.claude/framework/hooks/` is the framework's: those are removed, a matcher group they leave empty is dropped, and the hooks listed in the manifest's `activeHooks` are appended to each event as their own groups. Every other hook — the project's own scripts, in their groups, matchers and order — and every other key in the file are kept; the framework's permission deny rules are added beside the project's, and the `Write(path)` deny rules older versions generated are removed. If the `hooks` block is not in the shape Claude Code reads (an object of events, each a list of groups with a `hooks` list of objects), the merge stops with an error, leaves the file unchanged, and sync exits non-zero; so does a `settings.json` that is not one JSON object (unparseable, empty, or several values). A missing `settings.json` is written from the generated settings. If the merged result is not one JSON object either (for example a broken `jq` on `PATH`), it is not installed: the merge stops with an error and the file is unchanged.
+
+Ownership is decided by the command string alone: any hook command containing `.claude/framework/hooks/` is treated as the framework's and is removed on every merge (sync, `init.sh`, `migrations/v4.sh`), whoever added it, and only the generated registrations take its place. A project's own hook, including a wrapper around a framework hook, must therefore not have that path in its command string. Known residual: when `.claude/settings.json` is a symlink, the merge replaces the link with a regular file holding the merged settings; the file the link pointed to is left as it was. A second: when there is no `.claude/settings.json` yet, the generated settings are written without the one-object check, so a jq that printed nothing would leave an empty file on a first install.
 
 ## Optional: Persistent Memory MCP Servers
 
