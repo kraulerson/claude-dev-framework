@@ -96,21 +96,51 @@ FRAMEWORK_LEGACY_DENY_RULES='[
 ]'
 
 # Merge generated hooks into an existing settings.json, preserving other keys.
+# A command containing .claude/framework/hooks/ is the framework's (every form the
+# generator has written); all of those are removed and the generated groups appended
+# to each event, so the project's own hooks and groups stay as they were. A hooks
+# block in an unexpected shape, or a file that is not one JSON object, stops the merge
+# (return 1) and leaves the file alone. A missing file is written from hooks_json.
 # Usage: merge_hooks_into_settings hooks_json settings_file
 merge_hooks_into_settings() {
   local settings_json="$1" settings_file="$2"
   local hooks_part perms_part
+  # One JSON object, nothing else: jq accepts an empty file and a stream of values.
+  local one_object='length == 1 and (.[0] | type) == "object"'
   hooks_part=$(echo "$settings_json" | jq '.hooks')
   perms_part=$(echo "$settings_json" | jq '.permissions.deny // []')
 
-  if [ -f "$settings_file" ] && jq '.' "$settings_file" >/dev/null 2>&1; then
-    local existing
-    existing=$(cat "$settings_file")
-    echo "$existing" | jq --argjson h "$hooks_part" --argjson d "$perms_part" \
+  if [ -f "$settings_file" ]; then
+    if ! jq -s -e "$one_object" "$settings_file" >/dev/null 2>&1; then
+      echo "ERROR: $settings_file: not valid JSON (a settings file is one JSON object); hooks not merged; the file is unchanged. Fix it and re-run." >&2
+      return 1
+    fi
+    if ! jq --argjson h "$hooks_part" --argjson d "$perms_part" \
         --argjson legacy "$FRAMEWORK_LEGACY_DENY_RULES" '
-      . + {hooks: $h}
+      (if .hooks == null then {} else .hooks end) as $old
+      | if ($old | type) != "object" then error("hooks is not an object") else . end
+      | .hooks = ($old
+          | with_entries(.key as $e
+              | if (.value | type) != "array" then error("hooks.\($e) is not an array") else . end
+              | .value |= map(
+                  if type != "object" or (.hooks | type) != "array" or any(.hooks[]; type != "object")
+                  then error("hooks.\($e) has a matcher group without a hooks array of objects") else . end
+                  | .hooks |= map(select(((.command | type) == "string"
+                                          and (.command | contains(".claude/framework/hooks/"))) | not))
+                  | select(.hooks | length > 0)))
+          | reduce ($h | to_entries[]) as $g (.; .[$g.key] = ((.[$g.key] // []) + $g.value))
+          | with_entries(select(.value | length > 0)))
       | .permissions = ((.permissions // {}) | .deny = (((.deny // []) - $legacy + $d) | unique | sort))
-    ' > "${settings_file}.tmp"
+    ' "$settings_file" > "${settings_file}.tmp"; then
+      rm -f "${settings_file}.tmp"
+      echo "ERROR: $settings_file: hooks not merged; the file is unchanged. Fix the hooks block and re-run." >&2
+      return 1
+    fi
+    if ! jq -s -e "$one_object" "${settings_file}.tmp" >/dev/null 2>&1; then
+      rm -f "${settings_file}.tmp"
+      echo "ERROR: $settings_file: merged settings failed validation; the file is unchanged. Re-run, and check the jq on PATH." >&2
+      return 1
+    fi
     mv "${settings_file}.tmp" "$settings_file"
   else
     echo "$settings_json" > "$settings_file"

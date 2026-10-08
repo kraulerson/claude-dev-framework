@@ -11,6 +11,11 @@ suite green against a fictional `tool_response.exit_code` field while production
   interactive) for a cross-session message: `prompt` is the exact `<cross-session-message …>` wrapper
   another session's `A1` arrived in. Ids and paths are sanitised; the keys and the prompt are as
   captured. Tests derive other prompts from it by replacing `.prompt` (and `.session_id`/`.cwd`).
+- `settings-solo-adopted.json` — not a hook input: the `.claude/settings.json` of a Solo-adopted project
+  (project-dogfood-3, manifest CDF 4.3.0, read 2026-10-08) with the `PostToolUseFailure` event of another
+  (k-pdf-dogfood-3). Events, matchers, group layout, command forms and permissions are as found; the
+  project's script names are replaced by neutral `scripts/project-*.sh` ones. Used by
+  `test-settings-merge.sh`.
 
 Refresh after Claude Code updates with: `bash tests/tools/capture-hook-schemas.sh`
 (requires the `claude` CLI and network; not run by run-tests.sh).
