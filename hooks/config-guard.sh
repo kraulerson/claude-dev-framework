@@ -94,80 +94,103 @@ if grep -qiE '\b(rm|mv|chmod|chown|rmdir)\b[^|;&]*[[:space:]]["'"'"']?(\./)?\.cl
   guard_block
 fi
 
+# The words the shell will see (shell_segments: quotes removed), one per line, each
+# marked R or S and with `//`, `/./` and `x/../` collapsed. R: an argument of a command
+# that only takes text — echo, printf, git commit/log/show/tag with no -c or
+# --config-env, or a shell or interpreter running a script file (bash scripts/x.sh
+# "…") — where a name counts only where it is a path: at the start of the word or after
+# a character that is no part of a name in prose (/ = : , @ { …). S: everything else —
+# sed's `w file`, awk, bash -c, find -exec, git grep -O, a here-document — where text is
+# code or a target, so any occurrence counts. Every word with a `$` (an $IFS can split
+# it at run time) is S too, and so is every word of a line that could change what those
+# command names run: an assignment in front of them, a function, alias, export,
+# declare, typeset, hash, enable, eval or source anywhere in the call. Fails for a line
+# the split cannot follow (substitution, backslash, $'...', an open quote, a comment), a
+# very long one, an older _helpers.sh, or a split that errors: the callers then match
+# the whole text, as before.
+WORDS=""
+command_words() {
+  local segs strict_line=0
+  type shell_segments >/dev/null 2>&1 && [ "${#COMMAND}" -le 65536 ] || return 1
+  segs=$(shell_segments "$COMMAND") || return 1
+  grep -qE $'^\001(subst|backslash|ansi|unterminated|comment)$' <<< "$segs" && return 1
+  grep -qE '(^|[^[:alnum:]_])(alias|function|export|declare|typeset|readonly|hash|enable|eval|source)([^[:alnum:]_]|$)|[[:alnum:]_][[:space:]]*\([[:space:]]*\)' <<< "$COMMAND" && strict_line=1
+  WORDS=$(awk -F'\037' -v strict="$strict_line" '
+    /^\001/ { next }
+    /^\002/ { for (j = 2; j <= NF; j++) print "S\t" $j; next }
+    {
+      k = 1; pre = 0
+      while (k <= NF && $k ~ /^(if|then|else|elif|fi|do|done|while|until|!|\{|\})$/) k++
+      while (k <= NF && $k ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { k++; pre = 1 }
+      c = $k; r = 0
+      if (c == "echo" || c == "printf") r = 1
+      else if (c == "git") {
+        # Config given with the command (-c, --config-env) can name a program.
+        m = k + 1; cfg = 0
+        while (m <= NF && $m ~ /^-/) { if ($m ~ /^(-c|--config-env)/) cfg = 1; if ($m ~ /^(-C|-c|--git-dir|--work-tree|--namespace|--config-env|--super-prefix|--attr-source)$/) m++; m++ }
+        if ($m ~ /^(commit|log|show|tag)$/ && !cfg) r = 1
+      }
+      else if (c ~ /^(bash|sh|zsh|dash|ksh|python[0-9.]*|node|ruby|perl)$/ && $(k + 1) ~ /[\/.]/ && $(k + 1) !~ /^-/ && $(k + 1) !~ /^\/(dev|proc)\//) r = 1
+      if (strict || pre) r = 0
+      for (j = 1; j <= NF; j++) print ((r && $j !~ /\$/) ? "R" : "S") "\t" $j
+    }' <<< "$segs") || return 1
+  WORDS=$(normalize_command_paths "$WORDS") || return 1
+}
+WORDS_OK=0
+command_words && WORDS_OK=1
+
 # Framework hooks that create, change or clear a workflow marker or an approval when
 # run (a hook input is just JSON on stdin, so piping a made-up one into record-approval.sh
 # twice approves, and `CLAUDECODE= bash …/mark-evaluated.sh` cleared the override's
 # only barrier). Any copy counts — the live install ~/.claude-dev-framework, a clone,
 # another project — so they are matched by file name in any folder and any letter
-# case, plus the live install's hooks folder itself (a copy or glob of it). Kept here,
-# not in _helpers.sh, so a half-done sync cannot leave the guard without it. A new hook
-# that writes or clears /tmp/.claude_* state or .claude/approvals.jsonl belongs in this
-# list. Reads stay allowed; the project's own mark-plan-closed.sh stays sanctioned.
-STATE_HOOKS_RE='(^|[^[:alnum:]_.-])(mark-evaluated|mark-plan-closed|record-approval|marker-tracker|session-start|session-end|stop-checklist)\.sh([^[:alnum:]_.-]|$)|\.claude-dev-framework/hooks([^[:alnum:]_.-]|$)'
-if grep -qiE "$STATE_HOOKS_RE" <<< "$COMMAND" \
-   || grep -qiE "$STATE_HOOKS_RE" <<< "$NORM_COMMAND"; then
+# case, plus the live install's hooks folder itself (a copy or glob of it), which counts
+# anywhere in the text. Kept here, not in _helpers.sh, so a half-done sync cannot leave
+# the guard without it. A new hook that writes or clears /tmp/.claude_* state or
+# .claude/approvals.jsonl belongs in this list. Reads stay allowed; the project's own
+# mark-plan-closed.sh stays sanctioned. A name in an R word (command_words) counts as a
+# path does there, so a commit message listing the hooks a sync adds passes (#33), while
+# "hooks/record-approval.sh" in one, a redirect to /tmp/record-approval.sh and
+# `bash x/record-approval.sh` still count.
+STATE_HOOK_NAME_RE='(mark-evaluated|mark-plan-closed|record-approval|marker-tracker|session-start|session-end|stop-checklist)\.sh([^[:alnum:]_.-]|$)'
+STATE_HOOKS_DIR_RE='\.claude-dev-framework/hooks([^[:alnum:]_.-]|$)'
+names_state_hook() {
+  grep -qiE "$STATE_HOOKS_DIR_RE" <<< "$COMMAND" && return 0
+  grep -qiE "$STATE_HOOKS_DIR_RE" <<< "$NORM_COMMAND" && return 0
+  if [ "$WORDS_OK" = 1 ]; then
+    grep -qiE "^R"$'\t'"(.*[^[:alnum:][:space:]_.(-])?${STATE_HOOK_NAME_RE}" <<< "$WORDS" \
+      || grep -qiE "^S"$'\t'"(.*[^[:alnum:]_.-])?${STATE_HOOK_NAME_RE}" <<< "$WORDS"
+    return
+  fi
+  grep -qiE "(^|[^[:alnum:]_.-])${STATE_HOOK_NAME_RE}" <<< "$COMMAND" \
+    || grep -qiE "(^|[^[:alnum:]_.-])${STATE_HOOK_NAME_RE}" <<< "$NORM_COMMAND"
+}
+if names_state_hook; then
   if [[ "$COMMAND" == *mark-plan-closed.sh* ]] \
      && is_sanctioned_mark_command "$COMMAND" "$CWD"; then
     guard_allow
   fi
   command_only_reads "$COMMAND" && guard_allow
-  printf "BLOCKED — Running a framework hook that creates or clears workflow markers or approvals (mark-evaluated.sh, record-approval.sh, marker-tracker.sh, session-start.sh, session-end.sh, stop-checklist.sh, or mark-plan-closed.sh outside the project's .claude/framework/hooks/), or copying one, is not permitted, from any folder. Claude Code runs these hooks itself. mark-evaluated.sh is the user's own override, run in their separate terminal. To get a commit approved: stage the change, record the question in .claude/pending-approval.json (schema 2; see the enforce-evaluate block message for the exact shape) and stop; the user approves by replying with the option id. Reading these files (cat, grep, git log) is allowed; if a commit message only mentions one, write the message to a file and use git commit -F <file>.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second.\n" >&2
+  printf "BLOCKED — Running a framework hook that creates or clears workflow markers or approvals (mark-evaluated.sh, record-approval.sh, marker-tracker.sh, session-start.sh, session-end.sh, stop-checklist.sh, or mark-plan-closed.sh outside the project's .claude/framework/hooks/), or copying one, is not permitted, from any folder. Claude Code runs these hooks itself. mark-evaluated.sh is the user's own override, run in their separate terminal. To get a commit approved: stage the change, record the question in .claude/pending-approval.json (schema 2; see the enforce-evaluate block message for the exact shape) and stop; the user approves by replying with the option id. Reading these files (cat, grep, git log) is allowed. A commit message or echo text may name one after a blank or ( (\"adds record-approval.sh\"). At the start of the argument or after / = : and the like (\"hooks/record-approval.sh\") it reads as a path and is refused, as it is in a here-document, in an argument with a \$, and as the live install's hooks folder anywhere; reword it, or write the message to a file and use git commit -F <file>.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second.\n" >&2
   guard_block
 fi
 
 # Check if command names framework config or hook paths (CONFIG_GUARD_PROTECTED_RE in
 # _helpers.sh: the config files, framework/hooks/, the bare .claude/framework and
 # .claude/framework/hooks directories, the approval audit and git's hooks, config and
-# info, in any letter case). The words the shell will see are read (shell_segments:
-# quotes removed), each with `//`, `/./` and `x/../` collapsed.
+# info, in any letter case), in the words command_words reads.
 #
-# Prose (dogfood-3 rows 5, 13, 14b): in the arguments of a command that only takes
-# text — echo, printf, git commit/log/show/tag with no -c or --config-env, or a shell
-# or interpreter running a script file (bash scripts/x.sh "…") — a protected path
-# counts only where it is a path: at the start of a word or after a character that is
-# no part of a name in prose
-# (/ = : , @ { …), so "/Users/me/Claude Projects/p/.claude/settings.json" and
+# Prose (dogfood-3 rows 5, 13, 14b): in an R word a protected path counts only where it
+# is a path, so "/Users/me/Claude Projects/p/.claude/settings.json" and
 # --output=.claude/… still count, while "(Stage .claude/framework/…" or "Refreshes
 # .claude/framework via" in a question or a commit message does not (that word names a
-# folder called "a .claude", never the project's .claude). Everywhere else — sed's
-# `w file`, awk, bash -c, find -exec, git grep -O, a here-document — text is code or a
-# target, so any occurrence counts, as before. So does every word with a `$` (an $IFS
-# can split it at run time) and every line that could change what those command names
-# run: an assignment in front of them, a function, alias, export, declare, typeset,
-# hash, enable, eval or source anywhere in the call. A line the split cannot follow
-# (substitution, backslash, $'...', an open quote, a comment), a very long one, or an
-# older _helpers.sh: the whole text, as before.
-WORDS=""
+# folder called "a .claude", never the project's .claude). In an S word any occurrence
+# counts, as before. Without the words: the whole text, as before.
 names_protected_path() {
-  local segs strict_line=0
-  if type shell_segments >/dev/null 2>&1 && [ "${#COMMAND}" -le 65536 ]; then
-    segs=$(shell_segments "$COMMAND")
-    if ! grep -qE $'^\001(subst|backslash|ansi|unterminated|comment)$' <<< "$segs"; then
-      grep -qE '(^|[^[:alnum:]_])(alias|function|export|declare|typeset|readonly|hash|enable|eval|source)([^[:alnum:]_]|$)|[[:alnum:]_][[:space:]]*\([[:space:]]*\)' <<< "$COMMAND" && strict_line=1
-      WORDS=$(awk -F'\037' -v strict="$strict_line" '
-        /^\001/ { next }
-        /^\002/ { for (j = 2; j <= NF; j++) print "S\t" $j; next }
-        {
-          k = 1; pre = 0
-          while (k <= NF && $k ~ /^(if|then|else|elif|fi|do|done|while|until|!|\{|\})$/) k++
-          while (k <= NF && $k ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { k++; pre = 1 }
-          c = $k; r = 0
-          if (c == "echo" || c == "printf") r = 1
-          else if (c == "git") {
-            # Config given with the command (-c, --config-env) can name a program.
-            m = k + 1; cfg = 0
-            while (m <= NF && $m ~ /^-/) { if ($m ~ /^(-c|--config-env)/) cfg = 1; if ($m ~ /^(-C|-c|--git-dir|--work-tree|--namespace|--config-env|--super-prefix|--attr-source)$/) m++; m++ }
-            if ($m ~ /^(commit|log|show|tag)$/ && !cfg) r = 1
-          }
-          else if (c ~ /^(bash|sh|zsh|dash|ksh|python[0-9.]*|node|ruby|perl)$/ && $(k + 1) ~ /[\/.]/ && $(k + 1) !~ /^-/ && $(k + 1) !~ /^\/(dev|proc)\//) r = 1
-          if (strict || pre) r = 0
-          for (j = 1; j <= NF; j++) print ((r && $j !~ /\$/) ? "R" : "S") "\t" $j
-        }' <<< "$segs")
-      WORDS=$(normalize_command_paths "$WORDS")
-      grep -qiE "^R"$'\t'"(.*[^[:alnum:][:space:]_.(-])?(${CONFIG_GUARD_PROTECTED_RE})" <<< "$WORDS" \
-        || grep -qiE "^S"$'\t'".*(${CONFIG_GUARD_PROTECTED_RE})" <<< "$WORDS"
-      return
-    fi
+  if [ "$WORDS_OK" = 1 ]; then
+    grep -qiE "^R"$'\t'"(.*[^[:alnum:][:space:]_.(-])?(${CONFIG_GUARD_PROTECTED_RE})" <<< "$WORDS" \
+      || grep -qiE "^S"$'\t'".*(${CONFIG_GUARD_PROTECTED_RE})" <<< "$WORDS"
+    return
   fi
   WORDS="$NORM_COMMAND"
   grep -qiE "$CONFIG_GUARD_PROTECTED_RE" <<< "$COMMAND" || grep -qiE "$CONFIG_GUARD_PROTECTED_RE" <<< "$NORM_COMMAND"
