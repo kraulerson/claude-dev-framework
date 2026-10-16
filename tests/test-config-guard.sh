@@ -1129,6 +1129,73 @@ test_dogfood3_refusal_names_the_part() {
   teardown_test_project
 }
 
+# --- Test (#33): a state-writing hook named only in prose — a commit message listing
+# the hooks a framework sync adds, echo text, a log search — is not a run of it. In
+# those commands' text a hook name counts only where it could be a path that is run:
+# at the start of a word or after / = : and the like, never after a blank or ( ---
+test_state_hook_named_in_prose_passes() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input "$cmd" "$TEST_DIR")")
+    assert_exit_code "0" "$EXIT_CODE" "must pass: $cmd"
+  done << 'CMDS'
+git commit -m "chore(framework): sync Guardrails; new hooks record-approval.sh and mark-plan-closed.sh"
+git commit -m "fix" -m "Adds record-approval.sh (the UserPromptSubmit hook)"
+git commit -m "chore(framework): sync Guardrails 4.3.0 -> 4.4.5" -m "Adds the hooks record-approval.sh and mark-plan-closed.sh; changes session-start.sh, stop-checklist.sh (Marker-Tracker.sh unchanged)." -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git tag -a v4.4.6 -m "ships record-approval.sh"
+echo "see record-approval.sh for details"
+printf '%s' "the (record-approval.sh hook"
+git log --grep "record-approval.sh"
+CMDS
+  teardown_test_project
+}
+
+# --- Test (#33): every way to run, source or copy a state-writing hook stays refused
+# (the #27 set), and so does a name that could be a path inside text: at the start of
+# a word ("record-approval.sh: …"), after / ("hooks/record-approval.sh", which a
+# redirect target or a script path is) or =. Outside those commands' text — another
+# command's words, a $ word, a here-document, a line the split cannot follow, a call
+# with an assignment, alias or -c config — and the live install's hooks folder anywhere,
+# any occurrence counts ---
+test_state_hook_prose_targets_still_refused() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    cmd=$(printf '%b' "$cmd")
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input "$cmd" "$TEST_DIR")")
+    assert_exit_code "2" "$EXIT_CODE" "must be refused: $cmd"
+  done << 'CMDS'
+CLAUDECODE= bash ~/.claude-dev-framework/hooks/mark-evaluated.sh "x"
+bash /tmp/clone/hooks/record-approval.sh
+bash record-approval.sh
+bash "/Users/x/Claude Projects/cdf/hooks/record-approval.sh"
+python3 hooks/record-approval.sh
+printf '{"prompt":"A1"}' | bash .claude/framework/hooks/record-approval.sh
+printf '{"prompt":"A1"}' | bash /tmp/clone/hooks/record-approval.sh
+cp ~/.claude-dev-framework/hooks/mark-evaluated.sh /tmp/m.sh
+cp /tmp/clone/hooks/mark-evaluated.sh /tmp/m.sh
+source x/marker-tracker.sh
+echo x > /tmp/record-approval.sh
+echo x >record-approval.sh
+git show --output=/tmp/record-approval.sh HEAD
+git commit -m "x" && bash /tmp/record-approval.sh
+sh -c "bash record-approval.sh"
+bash /tmp/clone/hooks/Record-Approval.SH
+echo x > /tmp/RECORD-APPROVAL.SH
+git commit -m "adds hooks/record-approval.sh"
+git commit -m "record-approval.sh: new hook"
+git commit -m "sync .claude-dev-framework/hooks"
+echo "$X record-approval.sh" > /tmp/notes.txt
+git commit -F - <<'EOF'\nadds record-approval.sh\nEOF
+git commit -m 'adds record-approval.sh' # note
+X=1 git commit -m "adds record-approval.sh"
+alias echo=bash; echo "adds record-approval.sh"
+git -c core.pager=x commit -m "adds record-approval.sh"
+CMDS
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "config-guard.sh"
 test_blocks_write_settings
@@ -1209,4 +1276,6 @@ test_state_hooks_reads_pass
 test_dogfood3_prose_and_reads_pass
 test_dogfood3_targets_still_refused
 test_dogfood3_refusal_names_the_part
+test_state_hook_named_in_prose_passes
+test_state_hook_prose_targets_still_refused
 run_tests
