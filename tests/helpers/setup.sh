@@ -28,7 +28,7 @@ setup_test_project() {
   mkdir -p "$TEST_DIR/.claude/framework/hooks"
 
   # Initialize git repo with an initial commit
-  git -C "$TEST_DIR" init --quiet
+  git -C "$TEST_DIR" init --quiet -b main
   git -C "$TEST_DIR" config user.email "test@test.com"
   git -C "$TEST_DIR" config user.name "Test"
   echo "init" > "$TEST_DIR/README.md"
