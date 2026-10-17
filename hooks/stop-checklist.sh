@@ -71,18 +71,26 @@ CHANGELOG=$(get_branch_config_value '.changelogFile')
 CTX_HISTORY=$(get_branch_config_value '.contextHistoryFile')
 
 STAGED=$(git diff --cached --name-only 2>/dev/null || true)
-# git status --porcelain covers modified + staged + untracked (??). Strip the
-# 3-char status prefix, rename arrows, and quoting around paths with spaces.
-ALL=$(git status --porcelain 2>/dev/null \
-  | sed -e 's/^...//' -e 's/.* -> //' -e 's/^"//' -e 's/"$//' \
-  | sort -u | grep -v '^$' || true)
-
-HAS_SOURCE=false
-if [ -n "$ALL" ]; then
-  for f in $ALL; do
-    is_source_file "$f" 2>/dev/null && { HAS_SOURCE=true; break; }
-  done
-fi
+# git status --porcelain covers modified + staged + untracked (??). -uall lists the
+# files inside an untracked folder, not the folder (`?? docs/` read as the extension
+# `.docs/`, so source); -z ends each entry with NUL and leaves paths unquoted, so a
+# path with a space stays one path (#36). A rename or copy entry (R or C in either
+# column) is followed by the old path as an entry of its own: the new path is judged
+# and the old one skipped. ALL holds the paths one per line for the changelog check,
+# built once after the loop: appending to it per path grew with the square of the
+# count under bash 3.2 (37 s at 20,000 paths), so an un-ignored .venv or node_modules
+# could run the hook into Claude Code's hook timeout, where it fails open.
+ALL="" HAS_SOURCE=false SKIP_ORIG=false PATHS=()
+while IFS= read -r -d '' entry; do
+  if [ "$SKIP_ORIG" = true ]; then SKIP_ORIG=false; continue; fi
+  case "$entry" in [RC]?\ *|?[RC]\ *) SKIP_ORIG=true ;; esac
+  f="${entry:3}"
+  [ -n "$f" ] || continue
+  PATHS+=("$f")
+  [ "$HAS_SOURCE" = true ] || { is_source_file "$f" 2>/dev/null && HAS_SOURCE=true; }
+done < <(git status --porcelain -uall -z 2>/dev/null || true)
+# bash 3.2 under set -u treats an empty "${PATHS[@]}" as unbound.
+[ "${#PATHS[@]}" -eq 0 ] || printf -v ALL '%s\n' "${PATHS[@]}"
 
 # Exposed as a function so session-scope dedup can hash the final ERRORS string without duplicating the accumulation logic.
 compute_errors() {

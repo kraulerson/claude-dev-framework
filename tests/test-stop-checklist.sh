@@ -273,6 +273,80 @@ test_handoff_advisory_survives_closure() {
   teardown_test_project
 }
 
+# --- Test (#36): an untracked folder is judged by the files in it, not as one path
+# whose "extension" is the folder name (`?? docs/` read as `.docs/`, an unknown type and
+# so source): a new folder of notes and settings does not block; one with a new source
+# file in it still does ---
+test_untracked_folder_judged_by_its_files() {
+  setup_stop_test
+  mkdir -p "$TEST_DIR/docs/superpowers/plans" "$TEST_DIR/services/cp/.claude"
+  echo "# plan" > "$TEST_DIR/docs/superpowers/plans/p.md"
+  echo '{}' > "$TEST_DIR/services/cp/.claude/s.json"
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  assert_not_contains "$RESULT" "Uncommitted source changes" "a new folder of .md and .json is not uncommitted source"
+  mkdir -p "$TEST_DIR/services/cp/app"
+  echo "x = 1" > "$TEST_DIR/services/cp/app/main.py"
+  rm -f /tmp/.claude_stop_errors_hash_${TEST_HASH}_*
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  assert_contains "$RESULT" "Uncommitted source changes" "a new source file inside a new folder still blocks"
+  teardown_test_project
+}
+
+# --- Test (#36): a path with a space is one path, judged by its own extension, not split
+# at the blank (`docs/ADR` read as having the extension `.docs/ADR`) ---
+test_path_with_space_judged_whole() {
+  setup_stop_test
+  mkdir -p "$TEST_DIR/docs/ADR documentation"
+  echo "# ADR" > "$TEST_DIR/docs/ADR documentation/x.md"
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  assert_not_contains "$RESULT" "Uncommitted source changes" "an untracked docs/ADR documentation/x.md is not uncommitted source"
+  git -C "$TEST_DIR" add docs; git -C "$TEST_DIR" commit -qm "docs: add ADR"
+  echo "more" >> "$TEST_DIR/docs/ADR documentation/x.md"
+  rm -f /tmp/.claude_stop_errors_hash_${TEST_HASH}_*
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  assert_not_contains "$RESULT" "Uncommitted source changes" "a modified docs/ADR documentation/x.md is not uncommitted source"
+  mkdir -p "$TEST_DIR/src"
+  echo "x = 1" > "$TEST_DIR/src/my file.py"
+  rm -f /tmp/.claude_stop_errors_hash_${TEST_HASH}_*
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  assert_contains "$RESULT" "Uncommitted source changes" "an untracked src/my file.py still blocks"
+  teardown_test_project
+}
+
+# --- Test (#36): a renamed file is judged by its new name; the old name that follows a
+# rename entry is not a second change ---
+test_renamed_file_judged_by_new_name() {
+  setup_stop_test
+  commit_source_file "app.py" "Add app"
+  git -C "$TEST_DIR" mv app.py notes.md
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  assert_not_contains "$RESULT" "Uncommitted source changes" "a source file renamed to .md is judged by its new name"
+  git -C "$TEST_DIR" commit -qm "docs: move app to notes"
+  git -C "$TEST_DIR" mv notes.md "my app.py"
+  rm -f /tmp/.claude_stop_errors_hash_${TEST_HASH}_*
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  assert_contains "$RESULT" "Uncommitted source changes" "a file renamed to a source name still blocks"
+  teardown_test_project
+}
+
+# --- Test (#36 review): -uall lists every file in an untracked folder, so an un-ignored
+# .venv or node_modules gives tens of thousands of paths. Building the path list must
+# stay linear: appending to one string grew with the square of the count under bash 3.2
+# (20 s at 15,000 paths, 37 s at 20,000), toward Claude Code's hook timeout, where the
+# hook fails open. 15,000 paths take about 2 s with the list built once ---
+test_many_untracked_files_stay_fast() {
+  local start elapsed
+  setup_stop_test
+  mkdir -p "$TEST_DIR/notes"
+  (cd "$TEST_DIR/notes" && seq 1 15000 | sed 's/$/.md/' | xargs touch)
+  start=$SECONDS
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  elapsed=$((SECONDS - start))
+  assert_equals "true" "$([ "$elapsed" -lt 10 ] && echo true || echo false)" "15,000 untracked .md files are checked in under 10 s (took ${elapsed} s)"
+  assert_not_contains "$RESULT" "Uncommitted source changes" "15,000 untracked .md files are not uncommitted source"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "stop-checklist.sh"
 test_stop_hook_active_short_circuits
@@ -290,4 +364,8 @@ test_planning_advisory_absent_after_marking
 test_no_output_when_no_advisory_remains
 test_handoff_advisory_survives_closure
 test_audit_logs_are_not_source
+test_untracked_folder_judged_by_its_files
+test_path_with_space_judged_whole
+test_renamed_file_judged_by_new_name
+test_many_untracked_files_stay_fast
 run_tests
