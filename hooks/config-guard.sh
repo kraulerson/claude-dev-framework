@@ -152,7 +152,8 @@ command_words && WORDS_OK=1
 # path does there, so a commit message listing the hooks a sync adds passes (#33), while
 # "hooks/record-approval.sh" in one, a redirect to /tmp/record-approval.sh and
 # `bash x/record-approval.sh` still count.
-STATE_HOOK_NAME_RE='(mark-evaluated|mark-plan-closed|record-approval|marker-tracker|session-start|session-end|stop-checklist)\.sh([^[:alnum:]_.-]|$)'
+STATE_HOOK_FILE_RE='(mark-evaluated|mark-plan-closed|record-approval|marker-tracker|session-start|session-end|stop-checklist)\.sh'
+STATE_HOOK_NAME_RE="${STATE_HOOK_FILE_RE}([^[:alnum:]_.-]|\$)"
 STATE_HOOKS_DIR_RE='\.claude-dev-framework/hooks([^[:alnum:]_.-]|$)'
 names_state_hook() {
   grep -qiE "$STATE_HOOKS_DIR_RE" <<< "$COMMAND" && return 0
@@ -171,7 +172,20 @@ if names_state_hook; then
     guard_allow
   fi
   command_only_reads "$COMMAND" && guard_allow
-  printf "BLOCKED — Running a framework hook that creates or clears workflow markers or approvals (mark-evaluated.sh, record-approval.sh, marker-tracker.sh, session-start.sh, session-end.sh, stop-checklist.sh, or mark-plan-closed.sh outside the project's .claude/framework/hooks/), or copying one, is not permitted, from any folder. Claude Code runs these hooks itself. mark-evaluated.sh is the user's own override, run in their separate terminal. To get a commit approved: stage the change, record the question in .claude/pending-approval.json (schema 2; see the enforce-evaluate block message for the exact shape) and stop; the user approves by replying with the option id. Reading these files (cat, grep, git log) is allowed. A commit message or echo text may name one after a blank or ( (\"adds record-approval.sh\"). At the start of the argument or after / = : and the like (\"hooks/record-approval.sh\") it reads as a path and is refused, as it is in a here-document, in an argument with a \$, and as the live install's hooks folder anywhere; reword it, or write the message to a file and use git commit -F <file>.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second.\n" >&2
+  # Name the part that is not read-only when that alone is why (#35): every part that
+  # is not read-only is a command that names no state hook, in the text and in
+  # NORM_COMMAND, and the line holds no construct the split cannot follow. Otherwise the
+  # hook itself is run, copied or written, and the message below is the reason.
+  WHY=""
+  if type command_read_problem >/dev/null 2>&1; then
+    HOOK_TEXT_RE="${STATE_HOOK_FILE_RE}|\\.claude-dev-framework/hooks"
+    PART=$(command_read_problem "$COMMAND" || true)
+    HOOK_PART=$(command_read_problem "$COMMAND" "$HOOK_TEXT_RE" || true)$(command_read_problem "$NORM_COMMAND" "$HOOK_TEXT_RE" || true)
+    NAMED=$(grep -oiE "$HOOK_TEXT_RE" <<< "$NORM_COMMAND" | sed -n 1p || true)
+    [ -n "$PART" ] && [ -z "$HOOK_PART" ] && [ -n "$NAMED" ] \
+      && WHY="This command names ${NAMED} and also contains ${PART}, which is not read-only; run it as a separate Bash call. "
+  fi
+  printf "BLOCKED — %sRunning a framework hook that creates or clears workflow markers or approvals (mark-evaluated.sh, record-approval.sh, marker-tracker.sh, session-start.sh, session-end.sh, stop-checklist.sh, or mark-plan-closed.sh outside the project's .claude/framework/hooks/), or copying one, is not permitted, from any folder. Claude Code runs these hooks itself. mark-evaluated.sh is the user's own override, run in their separate terminal. To get a commit approved: stage the change, record the question in .claude/pending-approval.json (schema 2; see the enforce-evaluate block message for the exact shape) and stop; the user approves by replying with the option id. Reading these files (cat, grep, git log) is allowed. A commit message or echo text may name one after a blank or ( (\"adds record-approval.sh\"). At the start of the argument or after / = : and the like (\"hooks/record-approval.sh\") it reads as a path and is refused, as it is in a here-document, in an argument with a \$, and as the live install's hooks folder anywhere; reword it, or write the message to a file and use git commit -F <file>.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second.\n" "$WHY" >&2
   guard_block
 fi
 

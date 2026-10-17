@@ -1196,6 +1196,50 @@ CMDS
   teardown_test_project
 }
 
+# --- Test (#35): staging the framework's hook files, state hooks among them, chained
+# with a status count through tr and cut — the command a framework sync ran — passes:
+# tr reads only its input and cut reads files or its input, and both write only to
+# their output, so they are read-only ---
+test_state_hook_staging_with_tr_cut_passes() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input "$cmd" "$TEST_DIR")")
+    assert_exit_code "0" "$EXIT_CODE" "must pass: $cmd"
+  done << 'CMDS'
+cd "$HOME/Documents/Claude Projects/pantheon-harness" && git add .claude/framework/hooks/_helpers.sh .claude/framework/hooks/_preflight.sh .claude/framework/hooks/branch-safety.sh .claude/framework/hooks/changelog-sync-check.sh .claude/framework/hooks/compliance-reinforce.sh .claude/framework/hooks/config-guard.sh .claude/framework/hooks/enforce-context7.sh .claude/framework/hooks/enforce-evaluate.sh .claude/framework/hooks/enforce-plan-tracking.sh .claude/framework/hooks/enforce-superpowers.sh .claude/framework/hooks/known-stdlib.txt .claude/framework/hooks/mark-evaluated.sh .claude/framework/hooks/mark-plan-closed.sh .claude/framework/hooks/marker-guard.sh .claude/framework/hooks/marker-tracker.sh .claude/framework/hooks/pre-commit-checks.sh .claude/framework/hooks/pre-deploy-check.sh .claude/framework/hooks/record-approval.sh .claude/framework/hooks/scalability-check.sh .claude/framework/hooks/session-end.sh .claude/framework/hooks/session-start.sh .claude/framework/hooks/stop-checklist.sh .claude/framework/hooks/verification-gate.sh .claude/manifest.json .claude/settings.json && echo "--- staged ---" && git status --short | grep -E "^(A |M )" | wc -l | tr -d ' ' && git status --short | grep -E "^(A |M )" | cut -c1-60
+git add .claude/framework/hooks/record-approval.sh && git status --short | wc -l | tr -d ' '
+git add .claude/framework/hooks/record-approval.sh && git status --short | cut -c1-60
+cut -d: -f1 .claude/framework/hooks/record-approval.sh | head -3
+CMDS
+  teardown_test_project
+}
+
+# --- Test (#35): a line that names a state hook and also runs something that is not
+# read-only stays refused, and the refusal names that part so the agent can split the
+# call. Where the part that is not read-only is the hook's own run, copy or write, the
+# refusal does not say to split it ---
+test_state_hook_refusal_names_the_part() {
+  local cmd
+  setup_test_project
+  RESULT=$(run_hook "$HOOK" "$(cg_real_input 'git add .claude/framework/hooks/record-approval.sh && rm x' "$TEST_DIR")")
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input 'git add .claude/framework/hooks/record-approval.sh && rm x' "$TEST_DIR")")
+  assert_exit_code "2" "$EXIT_CODE" "staging a state hook chained with rm stays refused"
+  assert_contains "$RESULT" "names record-approval.sh and also contains rm x, which is not read-only; run it as a separate Bash call" "the refusal names the part that is not read-only"
+  assert_contains "$RESULT" "Running a framework hook that creates or clears workflow markers" "the rest of the refusal stays"
+  RESULT=$(run_hook "$HOOK" "$(cg_real_input 'git add hooks/record-approval.sh | sort -o /tmp/x' "$TEST_DIR")")
+  assert_contains "$RESULT" "also contains sort -o /tmp/x," "sort stays off the read-only list and is named"
+  for cmd in 'bash /tmp/clone/hooks/record-approval.sh' \
+             'echo x > /tmp/record-approval.sh' \
+             'git commit -m "x" && bash /tmp/record-approval.sh' \
+             'git add hooks/record-approval.sh && cat $(bash hooks/record-approval.sh)'; do
+    RESULT=$(run_hook "$HOOK" "$(cg_real_input "$cmd" "$TEST_DIR")")
+    assert_contains "$RESULT" "Running a framework hook" "a hook run is refused as one: $cmd"
+    assert_not_contains "$RESULT" "run it as a separate Bash call" "a hook run is not told to split: $cmd"
+  done
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "config-guard.sh"
 test_blocks_write_settings
@@ -1278,4 +1322,6 @@ test_dogfood3_targets_still_refused
 test_dogfood3_refusal_names_the_part
 test_state_hook_named_in_prose_passes
 test_state_hook_prose_targets_still_refused
+test_state_hook_staging_with_tr_cut_passes
+test_state_hook_refusal_names_the_part
 run_tests

@@ -862,7 +862,10 @@ git_sets_code_config() {
 # plain `git add` (staging copies what is on disk into the index; it changes no file
 # in the working tree, so a framework-written .claude file can be staged for commit
 # while writing it stays blocked). Allowed: cd with one argument; cat, head, tail,
-# more, wc, file, stat, ls, grep, jq, echo, pwd, true; rg without --pre; sed -n with
+# more, wc, file, stat, ls, grep, jq, echo, pwd, true, and tr and cut (#35: neither
+# has an option that writes a file or runs a program; sort, with -o and
+# --compress-program, and uniq, with its output-file argument, do and stay off); rg
+# without --pre; sed -n with
 # a line-range print script (`1,15p`); git diff/log/show/blame/status/ls-files/
 # ls-tree/cat-file/rev-parse/reflog/describe/name-rev/grep/check-ignore without
 # --output, --ext-diff or --textconv, which run configured drivers (and git grep
@@ -880,7 +883,10 @@ command_only_reads() { [ -z "$(command_read_problem "$1")" ]; }
 # { and }), the command after them judged on its own; a `for NAME in WORDS` head; and
 # a simple command made only of assignments, except to a name that changes what a
 # later read runs or how (PATH, IFS, the GIT_*, LD_*, DYLD_* and pager variables, ...).
-# An assignment in front of a command still refuses.
+# An assignment in front of a command still refuses. With $2, an extended regex in
+# lower case, a simple command that is not allowed counts only when its text matches
+# it (any letter case); a construct always counts. config-guard uses this to tell
+# whether the parts that are not read-only are all commands that do not name a hook.
 command_read_problem() {
   local cmd="$1" prev=""
   [ "${#cmd}" -le 16384 ] || { echo "a command longer than 16384 characters"; return 0; }
@@ -889,7 +895,7 @@ command_read_problem() {
     prev="$cmd"
     cmd=$(sed -E 's#(^|[[:space:]])[0-9]?(>&[0-9]|>>?[[:space:]]*/dev/null)([[:space:];&|)]|$)#\1\3#g' <<< "$cmd")
   done
-  shell_segments "$cmd" | awk -F'\037' '
+  shell_segments "$cmd" | CRP_NEED_RE="${2:-}" awk -F'\037' '
     function show(   x, t) { t = ""; for (x = 1; x <= NF; x++) t = t (x > 1 ? " " : "") $x; return t }
     /^\001pipe$/ { next }
     /^\001/ {
@@ -919,7 +925,7 @@ command_read_problem() {
         }
       }
       else if (c == "cd") ok = (NF <= 2)
-      else if (c ~ /^(cat|head|tail|more|wc|file|stat|ls|grep|jq|echo|pwd|true|cmp|diff|test|\[)$/) ok = 1
+      else if (c ~ /^(cat|head|tail|more|wc|file|stat|ls|grep|jq|echo|pwd|true|tr|cut|cmp|diff|test|\[)$/) ok = 1
       else if (c == "find") { ok = 1; for (j = 2; j <= NF; j++) if ($j ~ /^-(exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)$/) ok = 0 }
       else if (c == "rg") { ok = 1; for (j = 2; j <= NF; j++) if ($j ~ /^--pre(=|$)/) ok = 0 }
       else if (c == "sed") {
@@ -934,6 +940,7 @@ command_read_problem() {
         }
       }
       else if (c == "git" && $2 == "add") { ok = 1; for (j = 3; j <= NF; j++) if ($j ~ /^-/ && $j != "--") ok = 0 }
+      if (!ok && ENVIRON["CRP_NEED_RE"] != "" && tolower(show()) !~ ENVIRON["CRP_NEED_RE"]) ok = 1
       if (!ok && bad == "") bad = show()
     }
     END { if (bad == "" && nseg == 0) bad = "no command"; if (bad != "") print bad }'
