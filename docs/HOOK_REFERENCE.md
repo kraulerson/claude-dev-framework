@@ -58,7 +58,7 @@
 ## branch-safety.sh
 - **Event:** PreToolUse (Bash)
 - **Blocking:** Yes (exit 2)
-- **Purpose:** Blocks `git push` to protected branches, pushes outside allowed dev branches, and force pushes (`--force`, `-f`, `--force-with-lease`) on any branch
+- **Purpose:** Blocks `git push` to protected branches, whether the current branch is protected or a refspec names one as its destination (`HEAD:main`, `refs/heads/main`, `--delete main`; `--all`, `--branches`, `--mirror`, `:` and wildcard refspecs while any branch is protected), pushes outside allowed dev branches, and force pushes (`--force`, `-f`, `--force-with-lease`) on any branch
 - **Configured by:** `manifest.json → projectConfig → protectedBranches`, `devBranches`
 - **Disable:** Remove `branch-safety` from `manifest.json → activeHooks`
 

@@ -138,6 +138,86 @@ test_config_force_refspec_blocked() {
   teardown_test_project
 }
 
+# --- Test: a refspec whose destination is protected blocks from any branch (#18) ---
+test_refspec_destination_protected_blocks() {
+  setup_test_project
+  git -C "$TEST_DIR" checkout -b feature/test --quiet
+  local cmd
+  for cmd in "git push origin HEAD:main" \
+             "git push origin feature/test:main" \
+             "git push origin +feature/test:main" \
+             "git push origin HEAD:refs/heads/main" \
+             "git push origin refs/heads/main" \
+             "git push origin feature/test HEAD:main" \
+             "git push origin :main" \
+             "git push origin --delete main" \
+             "; git push origin HEAD:main" \
+             "echo ok && git push -u origin \"HEAD:main\""; do
+    INPUT=$(jq -n --arg c "$cmd" '{tool_input: {command: $c}}')
+    RESULT=$(run_hook "$HOOK" "$INPUT")
+    EXIT=$(run_hook_exit_code "$HOOK" "$INPUT")
+    assert_exit_code "2" "$EXIT" "'$cmd' from feature/test should block"
+    assert_contains "$RESULT" "PUSH BLOCKED" "'$cmd' should say push blocked"
+  done
+  teardown_test_project
+}
+
+# --- Test: --all, --branches, --mirror, ":" and a wildcard reach every branch ---
+test_all_branches_push_blocks_when_protected() {
+  setup_test_project
+  git -C "$TEST_DIR" checkout -b feature/test --quiet
+  local cmd
+  for cmd in "git push --all origin" "git push origin --branches" "git push --mirror origin" \
+             "git push origin :" "git push origin 'refs/heads/*:refs/heads/*'"; do
+    INPUT=$(jq -n --arg c "$cmd" '{tool_input: {command: $c}}')
+    EXIT=$(run_hook_exit_code "$HOOK" "$INPUT")
+    assert_exit_code "2" "$EXIT" "'$cmd' should block while a branch is protected"
+  done
+  teardown_test_project
+}
+
+# --- Test: with no protected branches, --all is allowed ---
+test_all_branches_push_passes_without_protected() {
+  setup_test_project
+  git -C "$TEST_DIR" checkout -b feature/test --quiet
+  jq '.projectConfig._base.protectedBranches = []' "$TEST_DIR/.claude/manifest.json" \
+    > "$TEST_DIR/manifest.tmp" && mv "$TEST_DIR/manifest.tmp" "$TEST_DIR/.claude/manifest.json"
+  INPUT='{"tool_input":{"command":"git push --all origin"}}'
+  EXIT=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "0" "$EXIT" "--all with no protected branches should pass"
+  teardown_test_project
+}
+
+# --- Test: unprotected destinations and non-push commands still pass ---
+test_refspec_destination_unprotected_passes() {
+  setup_test_project
+  git -C "$TEST_DIR" checkout -b feature/test --quiet
+  local cmd
+  for cmd in "git push origin HEAD:feature/test" \
+             "git push origin HEAD:refs/heads/feature/test" \
+             "git push origin HEAD:mainline" \
+             "git push origin refs/tags/main" \
+             "git push origin feature/test && git log main" \
+             "git commit -m \"block push to main\"" \
+             "git stash push -- main" \
+             "git push"; do
+    INPUT=$(jq -n --arg c "$cmd" '{tool_input: {command: $c}}')
+    EXIT=$(run_hook_exit_code "$HOOK" "$INPUT")
+    assert_exit_code "0" "$EXIT" "'$cmd' from feature/test should pass"
+  done
+  teardown_test_project
+}
+
+# --- Test: a bare push from a protected branch still blocks ---
+test_bare_push_protected_blocks() {
+  setup_test_project
+  git -C "$TEST_DIR" checkout -B main --quiet
+  INPUT='{"tool_input":{"command":"git push"}}'
+  EXIT=$(run_hook_exit_code "$HOOK" "$INPUT")
+  assert_exit_code "2" "$EXIT" "bare push from protected branch should block"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "branch-safety.sh"
 test_non_push_passes
@@ -152,4 +232,9 @@ test_refspec_force_dev_branch_blocked
 test_chained_plus_after_push_passes
 test_config_force_refspec_blocked
 test_normal_push_dev_branch_passes
+test_refspec_destination_protected_blocks
+test_all_branches_push_blocks_when_protected
+test_all_branches_push_passes_without_protected
+test_refspec_destination_unprotected_passes
+test_bare_push_protected_blocks
 run_tests
