@@ -148,11 +148,11 @@ command_words && WORDS_OK=1
 # anywhere in the text. Kept here, not in _helpers.sh, so a half-done sync cannot leave
 # the guard without it. A new hook that writes or clears /tmp/.claude_* state or
 # .claude/approvals.jsonl belongs in this list. Reads stay allowed; the project's own
-# mark-plan-closed.sh stays sanctioned. A name in an R word (command_words) counts as a
-# path does there, so a commit message listing the hooks a sync adds passes (#33), while
-# "hooks/record-approval.sh" in one, a redirect to /tmp/record-approval.sh and
-# `bash x/record-approval.sh` still count.
-STATE_HOOK_FILE_RE='(mark-evaluated|mark-plan-closed|record-approval|marker-tracker|session-start|session-end|stop-checklist)\.sh'
+# mark-plan-closed.sh and mark-plan-active.sh (#38) stay sanctioned. A name in an R word
+# (command_words) counts as a path does there, so a commit message listing the hooks a
+# sync adds passes (#33), while "hooks/record-approval.sh" in one, a redirect to
+# /tmp/record-approval.sh and `bash x/record-approval.sh` still count.
+STATE_HOOK_FILE_RE='(mark-evaluated|mark-plan-closed|mark-plan-active|record-approval|marker-tracker|session-start|session-end|stop-checklist)\.sh'
 STATE_HOOK_NAME_RE="${STATE_HOOK_FILE_RE}([^[:alnum:]_.-]|\$)"
 STATE_HOOKS_DIR_RE='\.claude-dev-framework/hooks([^[:alnum:]_.-]|$)'
 names_state_hook() {
@@ -167,7 +167,7 @@ names_state_hook() {
     || grep -qiE "(^|[^[:alnum:]_.-])${STATE_HOOK_NAME_RE}" <<< "$NORM_COMMAND"
 }
 if names_state_hook; then
-  if [[ "$COMMAND" == *mark-plan-closed.sh* ]] \
+  if [[ "$COMMAND" == *mark-plan-closed.sh* || "$COMMAND" == *mark-plan-active.sh* ]] \
      && is_sanctioned_mark_command "$COMMAND" "$CWD"; then
     guard_allow
   fi
@@ -185,7 +185,7 @@ if names_state_hook; then
     [ -n "$PART" ] && [ -z "$HOOK_PART" ] && [ -n "$NAMED" ] \
       && WHY="This command names ${NAMED} and also contains ${PART}, which is not read-only; run it as a separate Bash call. "
   fi
-  printf "BLOCKED — %sRunning a framework hook that creates or clears workflow markers or approvals (mark-evaluated.sh, record-approval.sh, marker-tracker.sh, session-start.sh, session-end.sh, stop-checklist.sh, or mark-plan-closed.sh outside the project's .claude/framework/hooks/), or copying one, is not permitted, from any folder. Claude Code runs these hooks itself. mark-evaluated.sh is the user's own override, run in their separate terminal. To get a commit approved: stage the change, record the question in .claude/pending-approval.json (schema 2; see the enforce-evaluate block message for the exact shape) and stop; the user approves by replying with the option id. Reading these files (cat, grep, git log) is allowed. A commit message or echo text may name one after a blank or ( (\"adds record-approval.sh\"). At the start of the argument or after / = : and the like (\"hooks/record-approval.sh\") it reads as a path and is refused, as it is in a here-document, in an argument with a \$, and as the live install's hooks folder anywhere; reword it, or write the message to a file and use git commit -F <file>.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second.\n" "$WHY" >&2
+  printf "BLOCKED — %sRunning a framework hook that creates or clears workflow markers or approvals (mark-evaluated.sh, record-approval.sh, marker-tracker.sh, session-start.sh, session-end.sh, stop-checklist.sh, or mark-plan-closed.sh or mark-plan-active.sh other than as a lone command from the project root: bash .claude/framework/hooks/<script> \"<plain text>\"), or copying one, is not permitted, from any folder. Claude Code runs these hooks itself. mark-evaluated.sh is the user's own override, run in their separate terminal. To get a commit approved: stage the change, record the question in .claude/pending-approval.json (schema 2; see the enforce-evaluate block message for the exact shape) and stop; the user approves by replying with the option id. Reading these files (cat, grep, git log) is allowed. A commit message or echo text may name one after a blank or ( (\"adds record-approval.sh\"). At the start of the argument or after / = : and the like (\"hooks/record-approval.sh\") it reads as a path and is refused, as it is in a here-document, in an argument with a \$, and as the live install's hooks folder anywhere; reword it, or write the message to a file and use git commit -F <file>.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second.\n" "$WHY" >&2
   guard_block
 fi
 
@@ -212,9 +212,9 @@ names_protected_path() {
 if names_protected_path; then
   # Every such path is a literal path into a temp fixture, not the project's (#11).
   all_protected_paths_foreign "$COMMAND" && guard_allow
-  # The project's own mark-evaluated.sh / mark-plan-closed.sh, as a lone invocation
+  # The project's own mark-plan-closed.sh / mark-plan-active.sh, as a lone invocation
   # (R-11) resolved from the agent's cwd (#11). See _helpers.sh.
-  if [[ "$COMMAND" == *mark-plan-closed.sh* ]] \
+  if [[ "$COMMAND" == *mark-plan-closed.sh* || "$COMMAND" == *mark-plan-active.sh* ]] \
      && is_sanctioned_mark_command "$COMMAND" "$CWD"; then
     guard_allow
   fi
@@ -227,6 +227,9 @@ if names_protected_path; then
   MARK_HINT=""
   if [[ "$COMMAND" == *mark-plan-closed.sh* ]]; then
     MARK_HINT=" mark-plan-closed.sh runs only as a lone command from the project root, with no cd, pipe, redirection or chaining and a plain relative path, e.g.: bash .claude/framework/hooks/mark-plan-closed.sh \"one-line closure summary\""
+  fi
+  if [[ "$COMMAND" == *mark-plan-active.sh* ]]; then
+    MARK_HINT="$MARK_HINT mark-plan-active.sh runs only as a lone command from the project root, with no cd, pipe, redirection or chaining and a plain relative path, e.g.: bash .claude/framework/hooks/mark-plan-active.sh \"task you are starting\""
   fi
   if [[ "$COMMAND" == *mark-evaluated.sh* ]]; then
     MARK_HINT="$MARK_HINT mark-evaluated.sh is the user's own override, run in their separate terminal; you cannot run it. To get a commit approved: stage the change, record the question in .claude/pending-approval.json (schema 2; see the enforce-evaluate block message for the exact shape) and stop. The user approves by replying with the option id."

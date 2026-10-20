@@ -1240,6 +1240,63 @@ test_state_hook_refusal_names_the_part() {
   teardown_test_project
 }
 
+# --- Test (#38): the project's own mark-plan-active.sh is sanctioned as a lone call from
+# the project root, by relative, ./ and absolute path, as mark-plan-closed.sh is ---
+test_mark_plan_active_lone_call_allowed() {
+  local cmd
+  setup_test_project
+  for cmd in 'bash .claude/framework/hooks/mark-plan-active.sh "Task 2: parse the config file"' \
+             'bash ./.claude/framework/hooks/mark-plan-active.sh "Task 2"' \
+             "bash $TEST_DIR/.claude/framework/hooks/mark-plan-active.sh \"Task 2\"" \
+             '.claude/framework/hooks/mark-plan-active.sh "Task 2"'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input "$cmd" "$TEST_DIR")")
+    assert_exit_code "0" "$EXIT_CODE" "the lone sanctioned call must be allowed: $cmd"
+  done
+  teardown_test_project
+}
+
+# --- Test (#38): every other form of mark-plan-active.sh is refused — a copy, a script of
+# that name in another folder or in the live install, a chained call, an assignment or
+# env prefix, a quote- or backslash-split name, a longer name, a redirect, another cwd ---
+test_mark_plan_active_other_forms_refused() {
+  local cmd copy other
+  setup_test_project
+  copy=$(mktemp -d); printf '#!/bin/sh\n' > "$copy/mark-plan-active.sh"
+  mkdir -p "$TEST_DIR/evil"; printf '#!/bin/sh\n' > "$TEST_DIR/evil/mark-plan-active.sh"
+  for cmd in 'cp .claude/framework/hooks/mark-plan-active.sh /tmp/m.sh' \
+             'cat .claude/framework/hooks/mark-plan-active.sh > evil/m.sh' \
+             'bash /tmp/x/mark-plan-active.sh "Task 2"' \
+             "bash $copy/mark-plan-active.sh \"Task 2\"" \
+             'bash evil/mark-plan-active.sh "Task 2"' \
+             'sh evil/mark-plan-active.sh "Task 2"' \
+             'bash ~/.claude-dev-framework/hooks/mark-plan-active.sh "Task 2"' \
+             "bash $HOME/.claude-dev-framework/hooks/mark-plan-active.sh \"Task 2\"" \
+             'bash .claude/framework/hooks/mark-plan-active.sh "Task 2" && echo done' \
+             'bash .claude/framework/hooks/mark-plan-active.sh "Task 2"; true' \
+             'bash .claude/framework/hooks/mark-plan-active.sh "Task 2" | cat' \
+             'cd . && bash .claude/framework/hooks/mark-plan-active.sh "Task 2"' \
+             'bash .claude/framework/hooks/mark-plan-active.sh "Task 2" > /tmp/o' \
+             'X=1 bash .claude/framework/hooks/mark-plan-active.sh "Task 2"' \
+             'env bash .claude/framework/hooks/mark-plan-active.sh "Task 2"' \
+             'CLAUDE_PROJECT_DIR=/tmp/p bash .claude/framework/hooks/mark-plan-active.sh "Task 2"' \
+             'bash .claude/framework/hooks/mark-plan-"act"ive.sh "Task 2"' \
+             'bash /tmp/x/mark-plan-"act"ive.sh "Task 2"' \
+             "bash /tmp/x/mark-plan-act''ive.sh \"Task 2\"" \
+             'bash /tmp/x/mark-plan-act\ive.sh "Task 2"' \
+             'bash .claude/framework/hooks/mark-plan-active.sh.bak "Task 2"'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input "$cmd" "$TEST_DIR")")
+    assert_exit_code "2" "$EXIT_CODE" "must be refused: $cmd"
+  done
+  other=$(mktemp -d); mkdir -p "$other/.claude/framework/hooks"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input 'bash .claude/framework/hooks/mark-plan-active.sh "Task 2"' "$other")")
+  assert_exit_code "2" "$EXIT_CODE" "a relative call from another cwd must be refused"
+  RESULT=$(run_hook "$HOOK" "$(cg_real_input 'bash .claude/framework/hooks/mark-plan-active.sh "Task 2" && echo done' "$TEST_DIR")")
+  assert_contains "$RESULT" "mark-plan-active.sh" "the refusal names the script"
+  assert_contains "$RESULT" "as a lone command from the project root" "the refusal names the lone form"
+  rm -rf "$copy" "$other"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "config-guard.sh"
 test_blocks_write_settings
@@ -1324,4 +1381,6 @@ test_state_hook_named_in_prose_passes
 test_state_hook_prose_targets_still_refused
 test_state_hook_staging_with_tr_cut_passes
 test_state_hook_refusal_names_the_part
+test_mark_plan_active_lone_call_allowed
+test_mark_plan_active_other_forms_refused
 run_tests

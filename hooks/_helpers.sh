@@ -946,21 +946,21 @@ command_read_problem() {
     END { if (bad == "" && nseg == 0) bad = "no command"; if (bad != "") print bad }'
 }
 
-# True when COMMAND is a lone invocation of the project's own mark-plan-closed.sh.
-# mark-evaluated.sh is not sanctioned for the agent: approval comes from the user's
-# pick of a recorded question (record-approval.sh), and the script is the user's own
-# override, run in a separate terminal (approval design B, D5). The first word must be a plain path, and that path — taken
+# True when COMMAND is a lone invocation of the project's own mark-plan-closed.sh or
+# mark-plan-active.sh (#38). mark-evaluated.sh is not sanctioned for the agent:
+# approval comes from the user's pick of a recorded question (record-approval.sh),
+# and the script is the user's own override, run in a separate terminal (approval design B, D5). The first word must be a plain path, and that path — taken
 # relative to $2, the agent's working directory from the hook input — must resolve
 # to <project>/.claude/framework/hooks/. A script of the same name anywhere else
 # does not count.
 is_sanctioned_mark_command() {
   local cmd="$1" base="${2:-${CLAUDE_PROJECT_DIR:-$PWD}}" path name dir hooks
   is_lone_command "$cmd" || return 1
-  [[ "$cmd" =~ ^[[:space:]]*(bash[[:space:]]+)?([[:alnum:]_./+@,:%-]*mark-plan-closed\.sh)([[:space:]]|$) ]] || return 1
+  [[ "$cmd" =~ ^[[:space:]]*(bash[[:space:]]+)?([[:alnum:]_./+@,:%-]*mark-plan-(closed|active)\.sh)([[:space:]]|$) ]] || return 1
   path="${BASH_REMATCH[2]}"
   case "$path" in /*) ;; *) path="$base/$path" ;; esac
   name="${path##*/}"
-  [ "$name" = "mark-plan-closed.sh" ] || return 1
+  case "$name" in mark-plan-closed.sh|mark-plan-active.sh) ;; *) return 1 ;; esac
   dir=$(cd "${path%/*}/" 2>/dev/null && pwd -P) || return 1
   hooks=$(cd "${CLAUDE_PROJECT_DIR:-$PWD}/.claude/framework/hooks" 2>/dev/null && pwd -P) || return 1
   [ "$dir" = "$hooks" ]

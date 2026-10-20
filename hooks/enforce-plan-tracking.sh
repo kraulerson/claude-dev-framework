@@ -19,11 +19,16 @@ HASH=$(get_project_hash)
 cat >&2 << 'MSG'
 BLOCKED [Planning Zone] — No plan task is in_progress.
 
-You have a written plan for this session. Before editing source files, mark the task you are working on as in_progress using TaskUpdate.
+You have a written plan for this session. Before editing source files, mark the task you are working on as in_progress, one of two ways:
+  1. TaskUpdate with status in_progress. If TaskUpdate is a deferred tool, load it first with ToolSearch.
+  2. Without TaskUpdate, run this as its own Bash call from the project root (no cd, chaining, pipes or redirection; the task in plain text, no shell punctuation):
+     bash .claude/framework/hooks/mark-plan-active.sh "<task>"
+
+Each commit clears the mark, so mark the next task the same way before editing for it.
 
 Do NOT edit source files without an active plan task.
 Do NOT skip this because the change seems small.
-Do NOT create the marker manually — it is created automatically when you update a task to in_progress.
+Do NOT create the marker any other way — only TaskUpdate and mark-plan-active.sh create it.
 
 COMPLIANCE REMINDER: Your obligation is compliance first, speed second. There is no task small enough to skip this requirement.
 MSG
