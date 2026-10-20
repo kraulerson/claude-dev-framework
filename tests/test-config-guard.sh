@@ -1297,6 +1297,22 @@ test_mark_plan_active_other_forms_refused() {
   teardown_test_project
 }
 
+# --- Test (4.4.9): a here-string's word is stdin, read like a here-document's body, so
+# a protected path or a state hook in it counts ---
+test_herestring_word_counts() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input "$cmd" "$TEST_DIR")")
+    assert_exit_code "2" "$EXIT_CODE" "must be refused: $cmd"
+  done << 'CMDS'
+bash <<< "cp x .claude/settings.json"
+csh <<< "cp x .claude/settings.json"
+bash <<< "bash .claude/framework/hooks/mark-evaluated.sh"
+CMDS
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "config-guard.sh"
 test_blocks_write_settings
@@ -1383,4 +1399,5 @@ test_state_hook_staging_with_tr_cut_passes
 test_state_hook_refusal_names_the_part
 test_mark_plan_active_lone_call_allowed
 test_mark_plan_active_other_forms_refused
+test_herestring_word_counts
 run_tests

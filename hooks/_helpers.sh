@@ -438,37 +438,51 @@ is_lone_command() {
 # backslashes removed, so a caller can treat it as data (git_commit_text, when only
 # data readers took it) or as commands (the others). A body
 # line with $(...) or a backtick under an unquoted delimiter is flagged subst: the shell
-# runs it.
+# runs it. A here-string's word (<<< word) is printed the same way, as a one-line body:
+# it is stdin, not an argument. A << inside arithmetic ($((…)), ((…)), $[…]) is a shift.
 shell_segments() {
   printf '%s' "$1" | awk '
     function flag(f) { flags[f] = 1 }
     function endword() {
-      if (hw) { gsub(/[\n\t]/, " ", w); line = line (nw ? "\037" : "") w; nw++ }
+      if (hw && hsw) { hn++; hd[hn] = ""; ht[hn] = 1; hs[hn] = w; hsw = 0 }
+      else if (hw) { gsub(/[\n\t]/, " ", w); line = line (nw ? "\037" : "") w; nw++ }
       w = ""; hw = 0
     }
-    function endseg() { endword(); if (nw) { print line; ls++ } line = ""; nw = 0 }
-    # The bodies of the here-documents opened on the line just ended, from pos; returns
-    # the position after the last delimiter line.
-    function bodies(pos,    k, e, ln, cl, m, parts, x, out) {
+    function endseg() { endword(); hsw = 0; if (nw) { print line; ls++ } line = ""; nw = 0 }
+    # One body line: its words, split at blanks and ; & | ( ) < >, quotes and
+    # backslashes removed, each after a \037.
+    function bodyline(ln,    m, parts, x, out) {
+      m = split(ln, parts, /[ \t\n;&|()<>]+/); out = ""
+      for (x = 1; x <= m; x++) { gsub(/["\047\\]/, "", parts[x]); if (parts[x] != "") out = out "\037" parts[x] }
+      return out
+    }
+    # The bodies of the here-documents and here-strings opened on the line just ended,
+    # from pos; returns the position after the last delimiter line. A body whose
+    # delimiter line never comes runs to the end of the input; its lines carry a u after
+    # the count, for git_commit_text to read them as commands (a << the split misread
+    # swallows the lines after it).
+    function bodies(pos,    k, e, ln, cl, x, out, bl, nb, shut) {
       for (k = hi + 1; k <= hn; k++) {
+        if (ht[k]) { out = bodyline(hs[k]); if (out != "") print "\002" ls out; continue }
+        nb = 0; shut = 0
         while (pos <= n) {
           e = index(substr(s, pos), "\n")
           ln = e ? substr(s, pos, e - 1) : substr(s, pos)
           pos += e ? e : length(ln) + 1
           cl = ln; if (hx[k]) sub(/^\t+/, "", cl)
-          if (cl == hd[k]) break
+          if (cl == hd[k]) { shut = 1; break }
           if (!hq[k] && (index(ln, "$(") || index(ln, "`"))) flag("subst")
-          m = split(ln, parts, /[ \t;&|()<>]+/); out = ""
-          for (x = 1; x <= m; x++) { gsub(/["\047\\]/, "", parts[x]); if (parts[x] != "") out = out "\037" parts[x] }
-          if (out != "") print "\002" ls out
+          out = bodyline(ln)
+          if (out != "") bl[++nb] = out
         }
+        for (x = 1; x <= nb; x++) print "\002" ls (shut ? "" : "u") bl[x]
       }
       hi = hn
       return pos
     }
     { s = s (NR > 1 ? "\n" : "") $0 }
     END {
-      n = length(s); q = ""; w = ""; hw = 0; line = ""; nw = 0; hn = 0; hi = 0; ls = 0
+      n = length(s); q = ""; w = ""; hw = 0; line = ""; nw = 0; hn = 0; hi = 0; ls = 0; ad = 0; ab = 0
       for (i = 1; i <= n; i++) {
         c = substr(s, i, 1); nx = substr(s, i + 1, 1)
         if (q == "\047") { if (c == "\047") q = ""; else w = w c; continue }
@@ -482,15 +496,21 @@ shell_segments() {
         if (c == "\\") { flag("backslash"); i++; if (nx != "\n") { w = w nx; hw = 1 } continue }
         if (c == "\047" || c == "\"") { if (c == "\047" && substr(s, i - 1, 1) == "$") flag("ansi"); q = c; hw = 1; continue }
         if (c == "`") { flag("subst"); endseg(); continue }
-        if (c == "$" && nx == "(") { flag("subst"); endseg(); i++; continue }
+        # Arithmetic ($((…)), ((…)), $[…]) is followed by its open parentheses (ad) and
+        # brackets (ab): a << inside it is a shift, not a here-document.
+        if (c == "$" && nx == "(") { flag("subst"); endseg(); if (ad) ad++; else if (substr(s, i + 2, 1) == "(") ad = 1; i++; continue }
         if (c == "#" && !hw) { flag("comment"); while (i < n && substr(s, i + 1, 1) != "\n") i++; continue }
         if (c == " " || c == "\t") { endword(); continue }
         if (c == "\n") { endseg(); if (hn > hi) i = bodies(i + 1) - 1; ls = 0; continue }
         if (c == "|") { if (nx == "|") i++; else flag("pipe"); endseg(); continue }
+        if (c == "(") { if (ad) ad++; else if (nx == "(") ad = 1 }
+        if (c == ")" && ad) ad--
         if (c == ";" || c == "&" || c == "(" || c == ")") { endseg(); continue }
-        # A here-document (<< or <<-, not <<<): read its delimiter; the body follows the
-        # end of this line.
-        if (c == "<" && nx == "<" && substr(s, i + 2, 1) != "<") {
+        # A here-string (<<<) is a redirection: the word after it is its body.
+        if (c == "<" && nx == "<" && substr(s, i + 2, 1) == "<") { flag("redirect"); endword(); hsw = 1; i += 2; continue }
+        # A here-document (<< or <<-) outside arithmetic: read its delimiter; the body
+        # follows the end of this line.
+        if (c == "<" && nx == "<" && !ad && !ab) {
           flag("redirect"); endword()
           j = i + 2; dash = 0
           if (substr(s, j, 1) == "-") { dash = 1; j++ }
@@ -514,10 +534,13 @@ shell_segments() {
         # simple command.
         if (c == "&" && nx == ">") { flag("redirect"); endword(); i++; continue }
         if (c == "<" || c == ">") { flag("redirect"); if (nx == "(") flag("subst"); else if (nx == "&") i++; endword(); continue }
+        if (c == "[" && (ab || substr(s, i - 1, 1) == "$")) ab++
+        if (c == "]" && ab) ab--
         w = w c; hw = 1
       }
       if (q != "") flag("unterminated")
       endseg()
+      if (hn > hi) bodies(n + 1)
       for (f in flags) print "\001" f
     }'
 }
@@ -569,9 +592,10 @@ git_commit_text() {
       # A here-document body is data when every simple command on the line that opened
       # it only reads data or is git, which judges its own subcommand (commit -F -,
       # tag -F -). Otherwise its lines are read as commands; a shell or interpreter on
-      # stdin, source and awk -f - also fall back below.
+      # stdin, source and awk -f - also fall back below. A body whose delimiter line never
+      # comes (count ending in u) is read as commands whatever reads it.
       /^\002/ {
-        d = 1
+        d = ($1 !~ /u$/)
         for (x = nseg - substr($1, 2) + 1; x <= nseg; x++) if (!data[x]) d = 0
         if (d) next
         body = 1; $0 = substr($0, index($0, "\037") + 1)

@@ -70,6 +70,24 @@ test_commit_word_in_text_not_checked() {
   teardown_test_project
 }
 
+# --- Test (4.4.9): a commit on the line after a here-string, or under a here-document
+# that never closes, still triggers checks ---
+test_commit_after_herestring_checked() {
+  local cmd
+  setup_test_project
+  jq '.projectConfig._base.changelogFile = "CHANGELOG.md"' "$TEST_DIR/.claude/manifest.json" > "$TEST_DIR/.claude/manifest.json.tmp"
+  mv "$TEST_DIR/.claude/manifest.json.tmp" "$TEST_DIR/.claude/manifest.json"
+
+  echo "// code" > "$TEST_DIR/app.kt"
+  git -C "$TEST_DIR" add app.kt
+  for cmd in $'grep -c x <<< "hello"\ngit commit -m "x"' $'cat <<EOF\ngit commit -m x'; do
+    INPUT=$(jq -nc --arg c "$cmd" '{tool_input:{command:$c}}')
+    EXIT=$(run_hook_exit_code "$HOOK" "$INPUT")
+    assert_exit_code "2" "$EXIT" "a commit must be checked: $cmd"
+  done
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "pre-commit-checks.sh"
 test_non_commit_passes
@@ -77,4 +95,5 @@ test_doc_only_passes
 test_source_without_changelog_blocks
 test_chained_commit_triggers_checks
 test_commit_word_in_text_not_checked
+test_commit_after_herestring_checked
 run_tests
