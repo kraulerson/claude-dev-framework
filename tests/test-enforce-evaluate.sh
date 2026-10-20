@@ -816,6 +816,50 @@ CMDS
   teardown_test_project
 }
 
+# --- Test (4.4.9): a here-string (<<<) and a << inside arithmetic open no here-document,
+# and a here-document whose delimiter line never comes is read as commands, so a commit
+# on a later line counts; a here-string a shell reads is code ---
+test_herestring_and_arith_commits_block() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    cmd=$(printf '%b' "$cmd")
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "a commit must block: $cmd"
+  done << 'CMDS'
+grep -c x <<< "hello"\ngit commit -m "x"
+jq -r .name <<< "$PKG"\ngit commit -m x
+cat <<<word\ngit commit -m x
+cat <<< word\ngit commit -m x
+cat <<< a <<EOF\nb\nEOF\ngit commit -m x
+grep -c x <<< hello\ngit commit -m x\nhello
+bash <<< "./x; git commit -m x"
+csh <<< "git commit -m x"
+n=$((1<<2))\ngit commit -m x
+((x=1<<2))\ngit commit -m x
+((cat<<EOF))\ngit commit -m x\nEOF
+echo $[1<<2]\ngit commit -m x\n2]
+cat <<EOF\ngit commit -m x
+CMDS
+  teardown_test_project
+}
+
+# --- Test (4.4.9): a here-document under a data reader and a here-string that only
+# mentions a commit stay no commit ---
+test_herestring_mentions_pass() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    cmd=$(printf '%b' "$cmd")
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input "$cmd")")
+    assert_exit_code "0" "$EXIT_CODE" "not a commit: $cmd"
+  done << 'CMDS'
+cat >> notes.md <<'EOF'\nthen git commit\nEOF
+grep -c x <<< "git commit"
+CMDS
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "enforce-evaluate.sh"
 test_non_commit_passthrough
@@ -850,4 +894,6 @@ test_hidden_commit_forms_block
 test_script_run_by_path_passes
 test_absolute_path_runners_block
 test_script_path_limits_block
+test_herestring_and_arith_commits_block
+test_herestring_mentions_pass
 run_tests
