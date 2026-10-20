@@ -627,6 +627,50 @@ test_quotes_without_marker_names_pass() {
   teardown_test_project
 }
 
+# --- Test (#38): the project's own mark-plan-active.sh is allowed as a lone call whatever
+# its task text names. Each names a marker, so only the allowance can pass it ---
+test_mark_plan_active_lone_call_allowed() {
+  local cmd
+  setup_test_project
+  for cmd in 'bash .claude/framework/hooks/mark-plan-active.sh "Task 2: /tmp/.claude_plan_active_x lifecycle"' \
+             'bash ./.claude/framework/hooks/mark-plan-active.sh "Task 2: /tmp/.claude_plan_active_x"' \
+             "bash $TEST_DIR/.claude/framework/hooks/mark-plan-active.sh \"Task 2: /tmp/.claude_plan_active_x\""; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(mg_input "$cmd" "$TEST_DIR")")
+    assert_exit_code "0" "$EXIT_CODE" "the lone sanctioned call must be allowed: $cmd"
+  done
+  teardown_test_project
+}
+
+# --- Test (#38): no other form of mark-plan-active.sh unlocks the guard — a copy, another
+# folder, the live install, a chained call, an assignment or env prefix, a quote-split
+# name, another cwd ---
+test_mark_plan_active_other_forms_refused() {
+  local cmd other
+  setup_test_project
+  mkdir -p "$TEST_DIR/evil"
+  for cmd in 'cp .claude/framework/hooks/mark-plan-active.sh /tmp/.claude_plan_active_x' \
+             'bash /tmp/x/mark-plan-active.sh "Task 2: /tmp/.claude_plan_active_x"' \
+             'bash evil/mark-plan-active.sh "Task 2: /tmp/.claude_plan_active_x"' \
+             'bash ~/.claude-dev-framework/hooks/mark-plan-active.sh "Task 2: /tmp/.claude_plan_active_x"' \
+             'bash .claude/framework/hooks/mark-plan-active.sh "Task 2" && touch /tmp/.claude_plan_active_x' \
+             'bash .claude/framework/hooks/mark-plan-active.sh "Task 2"; touch /tmp/.claude_plan_active_x' \
+             'bash .claude/framework/hooks/mark-plan-active.sh "Task 2" > /tmp/.claude_plan_active_x' \
+             'X=1 bash .claude/framework/hooks/mark-plan-active.sh "Task 2: /tmp/.claude_plan_active_x"' \
+             'env bash .claude/framework/hooks/mark-plan-active.sh "Task 2: /tmp/.claude_plan_active_x"' \
+             'bash .claude/framework/hooks/mark-plan-"act"ive.sh "Task 2: /tmp/.claude_plan_active_x"' \
+             'bash .claude/framework/hooks/mark-plan-active.sh.bak /tmp/.claude_plan_active_x'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(mg_input "$cmd" "$TEST_DIR")")
+    assert_exit_code "2" "$EXIT_CODE" "must not unlock: $cmd"
+  done
+  other=$(mktemp -d); mkdir -p "$other/.claude/framework/hooks"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(mg_input 'bash .claude/framework/hooks/mark-plan-active.sh "Task 2: /tmp/.claude_plan_active_x"' "$other")")
+  assert_exit_code "2" "$EXIT_CODE" "a relative call from another cwd must not unlock"
+  RESULT=$(run_hook "$HOOK" '{"tool_input":{"command":"touch /tmp/.claude_plan_active_abc123"}}')
+  assert_contains "$RESULT" "mark-plan-active.sh" "block message names the active-task script"
+  rm -rf "$other"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "marker-guard.sh (v4 markers)"
 test_blocks_plan_active
@@ -687,4 +731,6 @@ test_block_message_names_scripts
 test_blocks_approval_shown_marker
 test_blocks_quote_split_marker_names
 test_quotes_without_marker_names_pass
+test_mark_plan_active_lone_call_allowed
+test_mark_plan_active_other_forms_refused
 run_tests

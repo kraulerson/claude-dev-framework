@@ -180,6 +180,7 @@ test_directive_names_sanctioned_scripts() {
   setup_test_project
   RESULT=$(run_hook "$HOOK" '{"source":"startup"}')
   assert_contains "$RESULT" "mark-plan-closed.sh" "directive should name mark-plan-closed.sh"
+  assert_contains "$RESULT" "mark-plan-active.sh" "directive should name mark-plan-active.sh (#38)"
   assert_contains "$RESULT" "pending-approval.json" "directive should name the approval route"
   assert_not_contains "$RESULT" "mark-evaluated.sh" "the directive no longer offers mark-evaluated.sh to the agent"
   assert_not_contains "$RESULT" "Markers are created automatically" "directive must not claim every marker is automatic"

@@ -24,7 +24,7 @@ jq --version >/dev/null 2>&1 || {
 }
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null || echo "")
 
-BLOCK_MSG="BLOCKED — Manual marker manipulation is not permitted. Workflow markers are created by the framework when you complete the required workflow: the evaluation marker when the user picks an approving option of a question you recorded in .claude/pending-approval.json, the plan-closed marker by the sanctioned script mark-plan-closed.sh (after documenting plan closure, as a lone command). Invoke the appropriate Superpowers skill, record the question and stop, or run mark-plan-closed.sh, to proceed."
+BLOCK_MSG="BLOCKED — Manual marker manipulation is not permitted. Workflow markers are created by the framework when you complete the required workflow: the evaluation marker when the user picks an approving option of a question you recorded in .claude/pending-approval.json, the plan-closed marker by the sanctioned script mark-plan-closed.sh (after documenting plan closure, as a lone command), the plan-active marker by TaskUpdate in_progress or the sanctioned script mark-plan-active.sh (as a lone command from the project root: bash .claude/framework/hooks/mark-plan-active.sh \"<task>\"). Invoke the appropriate Superpowers skill, record the question and stop, or run mark-plan-closed.sh or mark-plan-active.sh, to proceed."
 
 # --- File tools: block any write to a framework marker path (R-07) ---
 if [[ "$TOOL_NAME" = "Write" || "$TOOL_NAME" = "Edit" || "$TOOL_NAME" = "NotebookEdit" ]]; then
@@ -41,13 +41,13 @@ fi
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || echo "")
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty' 2>/dev/null || echo "")
 
-# Allow the sanctioned mark-plan-closed.sh script (mark-evaluated.sh is the user's own
-# override since approval design B, and is not sanctioned for the agent) — but only
-# as a lone, unchained invocation (R-11) of the project's own copy: the script path,
-# taken from the agent's cwd, must resolve to <project>/.claude/framework/hooks/, so
-# a script of the same name elsewhere unlocks nothing (#11). See
-# is_sanctioned_mark_command in _helpers.sh.
-if [[ "$COMMAND" == *mark-plan-closed.sh* ]] \
+# Allow the sanctioned mark-plan-closed.sh and mark-plan-active.sh (#38) scripts
+# (mark-evaluated.sh is the user's own override since approval design B, and is not
+# sanctioned for the agent) — but only as a lone, unchained invocation (R-11) of the
+# project's own copy: the script path, taken from the agent's cwd, must resolve to
+# <project>/.claude/framework/hooks/, so a script of the same name elsewhere unlocks
+# nothing (#11). See is_sanctioned_mark_command in _helpers.sh.
+if [[ "$COMMAND" == *mark-plan-closed.sh* || "$COMMAND" == *mark-plan-active.sh* ]] \
    && is_sanctioned_mark_command "$COMMAND" "$CWD"; then
   guard_allow
 fi

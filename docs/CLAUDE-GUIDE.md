@@ -54,6 +54,7 @@ Markers are temporary files in `/tmp/` that track workflow completion. They are 
 | `.claude_superpowers_{hash}` | You invoke a Superpowers skill (`marker-tracker.sh` creates it, automatic) | After successful `git commit` | `enforce-superpowers.sh` |
 | `.claude_session_start_{hash}` | Session starts (automatic) | Session ends | `stop-checklist.sh` |
 | `.claude_changelog_synced_{hash}` | Sync script succeeds (automatic) | Not auto-cleared | `changelog-sync-check.sh` |
+| `.claude_plan_active_{hash}` | With a written plan, you mark the task you are starting in_progress: TaskUpdate (load it with ToolSearch if it is deferred), or without TaskUpdate run `mark-plan-active.sh "<task>"` as a lone command from the project root | After successful `git commit` (mark the next task again), TaskUpdate completed, fresh session start or session end | `enforce-plan-tracking.sh` |
 | `.claude_plan_closed_{hash}` | You document plan closure, then run `mark-plan-closed.sh` with a one-line summary or `--note <path>` | Fresh session start (startup/clear) or session end; kept across resume and compact | `stop-checklist.sh` |
 
 **Important**: The evaluation and Superpowers markers clear after each commit (via `marker-tracker.sh`). This means for each new piece of work in a session, you must go through those workflows again. This is intentional — it prevents a single approval from covering unrelated changes. Other markers have different lifecycles (see the "Cleared when" column above).

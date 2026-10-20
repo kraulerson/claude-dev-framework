@@ -67,6 +67,30 @@ test_config_file_passes() {
   teardown_test_project
 }
 
+# --- Test (#38): the block message names both routes to mark the task, and that a
+# commit clears the mark ---
+test_block_message_names_both_routes() {
+  setup_test_project
+  touch "/tmp/.claude_has_plan_${TEST_HASH}"
+  RESULT=$(run_hook "$HOOK" '{"tool_input":{"file_path":"app.py"}}')
+  assert_contains "$RESULT" "TaskUpdate" "block message names TaskUpdate"
+  assert_contains "$RESULT" "ToolSearch" "block message says how to load a deferred TaskUpdate"
+  assert_contains "$RESULT" 'bash .claude/framework/hooks/mark-plan-active.sh "<task>"' "block message names the script, runnable"
+  assert_contains "$RESULT" "as its own Bash call from the project root" "block message says how the script must be run"
+  assert_contains "$RESULT" "Each commit clears" "block message says a commit clears the mark"
+  teardown_test_project
+}
+
+# --- Test (#38): the script's mark passes the zone ---
+test_passes_after_mark_plan_active() {
+  setup_test_project
+  touch "/tmp/.claude_has_plan_${TEST_HASH}"
+  (cd "$TEST_DIR" && bash "$HOOK_DIR/mark-plan-active.sh" "Task 1: add the parser" >/dev/null 2>&1)
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" '{"tool_input":{"file_path":"app.py"}}')
+  assert_exit_code "0" "$EXIT_CODE" "should pass after mark-plan-active.sh"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "enforce-plan-tracking.sh"
 test_doc_file_passes
@@ -75,4 +99,6 @@ test_source_passes_without_plan
 test_blocks_without_plan_active
 test_passes_with_both_markers
 test_config_file_passes
+test_block_message_names_both_routes
+test_passes_after_mark_plan_active
 run_tests
