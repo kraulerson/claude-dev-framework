@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# enforce-context7.sh — PreToolUse (Write|Edit) blocking hook for Implementation Zone
+# enforce-context7.sh — PreToolUse (Bash|Write|Edit) blocking hook for Implementation Zone
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/_helpers.sh" 2>/dev/null || exit 1
 source "$SCRIPT_DIR/_preflight.sh"
 
 preflight_init
+preflight_bash_as_writes ext
 preflight_skip_non_source && exit 0
 
 HASH=$(get_project_hash)

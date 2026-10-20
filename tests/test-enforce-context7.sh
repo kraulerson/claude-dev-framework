@@ -144,6 +144,19 @@ test_test_file_with_imports_passes() {
   teardown_test_project
 }
 
+# --- Test (#39): a here-document written through Bash is scanned like Write content ---
+bash_hook_input() {
+  jq -nc --arg c "$1" --arg d "$TEST_DIR" '{cwd:$d,hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}'
+}
+test_bash_heredoc_scanned() {
+  setup_test_project
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(bash_hook_input $'cat > app.py <<EOF\nimport requests\nEOF')")
+  assert_exit_code "2" "$EXIT_CODE" "an unresearched import in a here-document blocks"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(bash_hook_input $'cat > app.py <<EOF\nimport os\nEOF')")
+  assert_exit_code "0" "$EXIT_CODE" "a stdlib import in a here-document passes"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "enforce-context7.sh"
 test_doc_file_passes
@@ -160,4 +173,5 @@ test_go_string_literal_no_block
 test_go_third_party_import_blocks
 test_go_import_block_no_block
 test_test_file_with_imports_passes
+test_bash_heredoc_scanned
 run_tests

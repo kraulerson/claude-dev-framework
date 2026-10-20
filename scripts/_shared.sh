@@ -17,18 +17,18 @@ generate_settings_json() {
       session-end)          event="SessionEnd";   matcher="" ;;
       compliance-reinforce) event="UserPromptSubmit"; matcher="" ;;
       enforce-evaluate)     event="PreToolUse";   matcher="Bash" ;;
-      enforce-superpowers)  event="PreToolUse";   matcher="Write|Edit|NotebookEdit" ;;
+      enforce-superpowers)  event="PreToolUse";   matcher="Bash|Write|Edit|NotebookEdit" ;;
       pre-commit-checks)    event="PreToolUse";   matcher="Bash" ;;
       branch-safety)        event="PreToolUse";   matcher="Bash" ;;
       stop-checklist)       event="Stop";         matcher="" ;;
-      changelog-sync-check) event="PreToolUse";   matcher="Write|Edit|NotebookEdit" ;;
+      changelog-sync-check) event="PreToolUse";   matcher="Bash|Write|Edit|NotebookEdit" ;;
       marker-tracker)       event="PostToolUse";  matcher="" ;;
-      scalability-check)    event="PreToolUse";   matcher="Write|Edit|NotebookEdit" ;;
+      scalability-check)    event="PreToolUse";   matcher="Bash|Write|Edit|NotebookEdit" ;;
       pre-deploy-check)     event="PreToolUse";   matcher="Bash" ;;
       marker-guard)         event="PreToolUse";   matcher="Bash|Write|Edit|NotebookEdit" ;;
       config-guard)         event="PreToolUse";   matcher="Bash|Write|Edit|NotebookEdit" ;;
-      enforce-plan-tracking) event="PreToolUse";  matcher="Write|Edit|NotebookEdit" ;;
-      enforce-context7)      event="PreToolUse";   matcher="Write|Edit|NotebookEdit" ;;
+      enforce-plan-tracking) event="PreToolUse";  matcher="Bash|Write|Edit|NotebookEdit" ;;
+      enforce-context7)      event="PreToolUse";   matcher="Bash|Write|Edit|NotebookEdit" ;;
       verification-gate)     event="PreToolUse";   matcher="Bash" ;;
       *) continue ;;
     esac

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# enforce-superpowers.sh — PreToolUse (Write|Edit) blocking hook
+# enforce-superpowers.sh — PreToolUse (Bash|Write|Edit) blocking hook
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/_helpers.sh" 2>/dev/null || exit 1
 source "$SCRIPT_DIR/_preflight.sh"
 
 preflight_init
+preflight_bash_as_writes ext
 preflight_skip_non_source && exit 0
 # A file outside the project (a scratch or temp file) is not the project's source.
 path_outside_project "$_PF_FILE_PATH" && exit 0

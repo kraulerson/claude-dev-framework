@@ -43,9 +43,24 @@ test_architectural_advises() {
   teardown_test_project
 }
 
+# --- Test (#39): an architectural file written through Bash gets the advisory ---
+bash_hook_input() {
+  jq -nc --arg c "$1" --arg d "$TEST_DIR" '{cwd:$d,hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}'
+}
+test_bash_write_advises() {
+  setup_test_project
+  jq '.discovery.futurePlatforms = "web dashboard"' "$TEST_DIR/.claude/manifest.json" > "$TEST_DIR/.claude/manifest.json.tmp"
+  mv "$TEST_DIR/.claude/manifest.json.tmp" "$TEST_DIR/.claude/manifest.json"
+  RESULT=$(run_hook "$HOOK" "$(bash_hook_input $'cat > UserRepository.kt <<EOF\nclass UserRepository\nEOF')")
+  assert_contains "$RESULT" "web dashboard" "a Bash write of an architectural file advises"
+  assert_equals "" "$(run_hook "$HOOK" "$(bash_hook_input 'cat UserRepository.kt')")" "reading it passes silently"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "scalability-check.sh"
 test_non_source_passes
 test_non_architectural_passes
 test_architectural_advises
+test_bash_write_advises
 run_tests
