@@ -91,6 +91,23 @@ test_passes_after_mark_plan_active() {
   teardown_test_project
 }
 
+# --- Test (#39): a source file written through Bash needs an active task too ---
+bash_hook_input() {
+  jq -nc --arg c "$1" --arg d "$TEST_DIR" '{cwd:$d,hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}'
+}
+test_bash_source_write() {
+  setup_test_project
+  touch "/tmp/.claude_has_plan_${TEST_HASH}"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(bash_hook_input "sed -i '' 's/a/b/' app.py")")
+  assert_exit_code "2" "$EXIT_CODE" "sed -i on a source file blocks without an active task"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(bash_hook_input 'echo x > notes.md')")
+  assert_exit_code "0" "$EXIT_CODE" "a Bash write of a doc passes"
+  touch "/tmp/.claude_plan_active_${TEST_HASH}"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(bash_hook_input "sed -i '' 's/a/b/' app.py")")
+  assert_exit_code "0" "$EXIT_CODE" "with an active task a Bash write passes"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "enforce-plan-tracking.sh"
 test_doc_file_passes
@@ -101,4 +118,5 @@ test_passes_with_both_markers
 test_config_file_passes
 test_block_message_names_both_routes
 test_passes_after_mark_plan_active
+test_bash_source_write
 run_tests

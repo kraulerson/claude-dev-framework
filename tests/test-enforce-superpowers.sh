@@ -152,6 +152,23 @@ test_old_helpers_still_block() {
   teardown_test_project
 }
 
+# --- Test (#39): a source file written through Bash needs the marker too ---
+bash_hook_input() {
+  jq -nc --arg c "$1" --arg d "$TEST_DIR" '{cwd:$d,hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}'
+}
+test_bash_source_write() {
+  setup_test_project
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(bash_hook_input $'cat > app.kt <<EOF\nfun main() {}\nEOF')")
+  assert_exit_code "2" "$EXIT_CODE" "a here-document into a source file blocks without the marker"
+  assert_contains "$(run_hook "$HOOK" "$(bash_hook_input 'echo x >> app.kt')")" "This Bash command writes" "the block says the write was through Bash"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(bash_hook_input 'cat app.kt')")
+  assert_exit_code "0" "$EXIT_CODE" "reading a source file through Bash passes"
+  touch "/tmp/.claude_superpowers_${TEST_HASH}"
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(bash_hook_input 'echo x >> app.kt')")
+  assert_exit_code "0" "$EXIT_CODE" "with the marker a Bash write passes"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "enforce-superpowers.sh"
 test_doc_file_passes
@@ -164,4 +181,5 @@ test_block_states_marker_lifetime
 test_outside_project_passes
 test_old_helpers_still_block
 test_ignore_files_are_config
+test_bash_source_write
 run_tests

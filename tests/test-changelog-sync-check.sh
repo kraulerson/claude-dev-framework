@@ -116,6 +116,19 @@ test_non_numeric_stat_output_advises() {
 }
 
 # --- Run all tests ---
+# --- Test (#39): the changelog written through Bash gets the advisory ---
+bash_hook_input() {
+  jq -nc --arg c "$1" --arg d "$TEST_DIR" '{cwd:$d,hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}'
+}
+test_bash_write_advises() {
+  setup_test_project
+  changelog_manifest
+  RESULT=$(run_hook "$HOOK" "$(bash_hook_input $'cat >> CHANGELOG.md <<EOF\n- fix\nEOF')")
+  assert_contains "$RESULT" "additionalContext" "a Bash write of the changelog advises"
+  assert_equals "" "$(run_hook "$HOOK" "$(bash_hook_input 'cat CHANGELOG.md')")" "reading it passes silently"
+  teardown_test_project
+}
+
 echo "changelog-sync-check.sh"
 test_non_changelog_passes
 test_changelog_with_marker_passes
@@ -123,4 +136,5 @@ test_changelog_without_marker_advises
 test_fresh_marker_with_gnu_stat_first
 test_stale_marker_with_gnu_stat_first
 test_non_numeric_stat_output_advises
+test_bash_write_advises
 run_tests

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# scalability-check.sh — PreToolUse (Write|Edit) advisory hook
+# scalability-check.sh — PreToolUse (Bash|Write|Edit) advisory hook
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/_helpers.sh" 2>/dev/null || exit 1
 source "$SCRIPT_DIR/_preflight.sh"
 
 preflight_init
+preflight_bash_as_writes
 preflight_skip_non_source && exit 0
 
 FUTURE=$(get_manifest_value '.discovery.futurePlatforms')
