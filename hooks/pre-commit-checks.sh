@@ -22,6 +22,7 @@ STAGED=$(git diff --cached --name-only 2>/dev/null || true)
 SOURCE_CHANGED=false
 for f in $STAGED; do
   is_doc_or_config "$f" && continue
+  is_framework_managed "$f" && continue
   is_source_file "$f" && { SOURCE_CHANGED=true; break; }
 done
 [ "$SOURCE_CHANGED" = false ] && exit 0

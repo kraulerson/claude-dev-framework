@@ -860,6 +860,56 @@ CMDS
   teardown_test_project
 }
 
+# --- Test (#44): the pipe rule reads only the pipeline that holds the command it does
+# not know, so a read-only line that mentions a commit elsewhere passes, and a -n there
+# is no --no-verify ---
+test_pipe_rule_reads_its_pipeline_pass() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    cmd=$(printf '%b' "$cmd")
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input "$cmd")")
+    assert_exit_code "0" "$EXIT_CODE" "not a commit: $cmd"
+  done << 'CMDS'
+cd "/Users/me/Claude Projects/p" && git log -2 --oneline; git status -sb | head -1; echo "--- F1 chore commit files"; git show --stat --format= 6807820; echo "--- record-feature help"; scripts/test-gate.sh --help 2>&1 | grep -- '--record-feature'
+git show HEAD | grep -n "commit"
+git show HEAD | grep -n "commit"; make lint | tail -1
+npm test | tail -3; echo "next: git commit"
+echo "then git commit" && make lint | tail -1
+make | tee build.log || echo "git commit later"
+make test ARGS="git log" STAGE=commit
+CMDS
+  teardown_test_project
+}
+
+# --- Test (#44): a pipeline is every command joined by | (also |& and a | at the end of
+# a line), with a compound command on its right read whole (a quoted reserved word such
+# as "fi" closes nothing), so what it feeds a code runner still counts ---
+test_pipe_rule_reads_its_pipeline_block() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    cmd=$(printf '%b' "$cmd")
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(ee_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "a commit must block: $cmd"
+  done << 'CMDS'
+git status; echo 'git commit -m x' | csh
+echo 'git commit -m x' |\ncsh
+echo 'git commit -m x' |& csh
+echo 'git commit -m x' | (true; csh)
+echo 'git commit -m x' | { true; csh; }
+printf 'x\\ngit commit -m x\\n' | while read -r l; do csh; done
+printf 'x\\ngit commit -m x\\n' | if true; then read -r l; csh; fi
+echo 'git commit -m x' | tr x y | csh
+cd sub && echo 'git commit -m x' | scripts/run.sh
+echo 'git commit -m x' | { true; "fi" cat; csh; }
+echo 'git commit -m x' | { true; \\} cat; csh; }
+echo 'git commit -m x' | (case a in a) true;; esac; csh)
+echo 'git commit -m x' | time { true; csh; }
+CMDS
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "enforce-evaluate.sh"
 test_non_commit_passthrough
@@ -896,4 +946,6 @@ test_absolute_path_runners_block
 test_script_path_limits_block
 test_herestring_and_arith_commits_block
 test_herestring_mentions_pass
+test_pipe_rule_reads_its_pipeline_pass
+test_pipe_rule_reads_its_pipeline_block
 run_tests

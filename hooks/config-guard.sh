@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # config-guard.sh — PreToolUse (Bash|Write|Edit) blocks modification of framework config and hooks
-# Protects: .claude/settings.json, .claude/manifest.json, .claude/framework/hooks/*,
+# Protects: .claude/settings.json, .claude/manifest.json, .claude/framework/*,
 # .claude/approvals.jsonl (approval audit), .git/hooks/*, .git/config, .git/info/*
 # Also blocks CLAUDE_PROJECT_DIR environment variable overrides.
 # A literal path into a temp fixture outside the project (a test's own
@@ -190,8 +190,8 @@ if names_state_hook; then
 fi
 
 # Check if command names framework config or hook paths (CONFIG_GUARD_PROTECTED_RE in
-# _helpers.sh: the config files, framework/hooks/, the bare .claude/framework and
-# .claude/framework/hooks directories, the approval audit and git's hooks, config and
+# _helpers.sh: the config files, everything under .claude/framework/ and the bare
+# .claude/framework directory, the approval audit and git's hooks, config and
 # info, in any letter case), in the words command_words reads.
 #
 # Prose (dogfood-3 rows 5, 13, 14b): in an R word a protected path counts only where it

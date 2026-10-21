@@ -145,6 +145,16 @@ is_source_file() {
   return 0
 }
 
+# Files the framework's sync puts in the project (#43): .claude/framework/ (hooks, rules,
+# gates). The project's commit checks (stop-checklist, pre-commit-checks) do not count
+# them as its source: their tests live in the framework's repository. The edit gates
+# still do, through is_source_file, beside config-guard, which refuses every write
+# there (#45).
+is_framework_managed() {
+  case "$1" in .claude/framework/*|*/.claude/framework/*) return 0 ;; esac
+  return 1
+}
+
 is_test_file() {
   local basename; basename="$(basename "$1")"
   case "$basename" in *Test*|*test*|*Spec*|*spec*|*_test.*) return 0 ;; esac
@@ -411,16 +421,16 @@ normalize_command_paths() {
 
 # The framework config paths config-guard protects, as an ERE matched case-insensitively
 # (a case-insensitive disk, macOS's default, treats .Claude/Settings.json as the same
-# file): settings.json, settings.local.json, manifest.json, anything under
-# framework/hooks/, and the bare .claude/framework and .claude/framework/hooks
-# directories, which a copy or move can target as a destination. The bare .claude
+# file): settings.json, settings.local.json, manifest.json, anything under framework/
+# (#45: its gates/ and rules/ too, not only hooks/), and the bare .claude/framework
+# directory, which a copy or move can target as a destination. The bare .claude
 # directory is not: the word appears in commit messages and everyday commands, and a
 # copy into it needs a source file already named settings.json — no cheaper than the
 # write-a-script-then-run-it residual (R-23).
 # Also the approval audit .claude/approvals.jsonl, and git's hooks, config and info
 # files: a hook planted there runs inside `git commit` and can change what an approved
 # commit contains (approval design B, D7). `.gitignore` and `.github/` do not match.
-CONFIG_GUARD_PROTECTED_RE='\.claude/(settings\.json|settings\.local\.json|manifest\.json|framework/hooks/|approvals\.jsonl)|\.claude/framework(/hooks)?/?([^[:alnum:]_./-]|$)|\.git/(hooks|info|config)([^[:alnum:]_.-]|$)'
+CONFIG_GUARD_PROTECTED_RE='\.claude/(settings\.json|settings\.local\.json|manifest\.json|framework/|approvals\.jsonl)|\.claude/framework([^[:alnum:]_./-]|$)|\.git/(hooks|info|config)([^[:alnum:]_.-]|$)'
 
 # A lone command: no chaining, piping, redirection, substitution or newline.
 is_lone_command() {
@@ -449,18 +459,40 @@ is_lone_command() {
 # duplication (2>&1, >&2, <&-) are dropped, >| does not split, a > inside arithmetic
 # or [[ ]] marks nothing, and each here-document body line and here-string word is also
 # printed raw as \004<count>\037<line>.
+# With `pipes` (git_commit_text, #44): a line \007 before the first simple command of
+# each pipeline, and \007| where an unquoted | joins two of its commands. A pipeline
+# runs to the next unquoted ; & && || or newline, but not one right after a | (|&, a |
+# at the end of a line), outside a compound command: ( ), { }, if/fi, while, until,
+# for, select and case count whole, their inner separators included, as the pipe feeds
+# the whole compound.
 shell_segments() {
-  printf '%s' "$1" | awk -v tg="${2:-}" '
+  printf '%s' "$1" | awk -v mode="${2:-}" '
+    BEGIN { tg = (mode == "targets"); pp = (mode == "pipes"); nb = 1; cp = 1 }
     function flag(f) { flags[f] = 1 }
     function endword(   p) {
       if (hw && hsw) { hn++; hd[hn] = ""; ht[hn] = 1; hs[hn] = w; hsw = 0 }
       else if (hw) {
         gsub(/[\n\t]/, " ", w); p = (wbad || wdyn) ? "\005" : ((pm == 1 || (pm == 2 && w ~ /[\/.]/)) ? "\003" : "")
         line = line (nw ? "\037" : "") p w; nw++; pm = 0
+        if (pp && cp) reserved(w)
       }
-      w = ""; hw = 0; wbad = 0; wdyn = 0
+      w = ""; hw = 0; wbad = 0; wdyn = 0; wq = 0
     }
-    function endseg() { if (tg && hw && cut) wbad = 1; endword(); hsw = 0; if (nw) { print line; ls++ } line = ""; nw = 0; pm = 0; cut = 0 }
+    function endseg() { if (tg && hw && cut) wbad = 1; endword(); hsw = 0; if (nw) { if (pp && nb) { print "\007"; nb = 0 } pj = 0; print line; ls++ } line = ""; nw = 0; pm = 0; cut = 0; cp = 1 }
+    # pipes: a word in command position. An unquoted reserved word opens (kd++) or closes
+    # a compound command; a quoted one ("fi") is a command name like any other.
+    function reserved(x) {
+      cp = 0
+      if (fname) { fname = 0; cp = 1; return }
+      if (wq) return
+      if (x == "function") { fname = 1; cp = 1 }
+      else if (x ~ /^(\{|if|while|until)$/) { kd++; cp = 1 }
+      else if (x ~ /^(for|select|case)$/) kd++
+      else if (x ~ /^(\}|fi|done|esac)$/) { if (kd) kd--; cp = 1 }
+      else if (x ~ /^(then|do|else|elif|!|time|coproc)$/) cp = 1
+    }
+    # pipes: an unquoted ; & && || or newline ends the pipeline outside a compound.
+    function sep() { if (pp && !pj && !pd && !kd) nb = 1 }
     # One body line: its words, split at blanks and ; & | ( ) < >, quotes and
     # backslashes removed, each after a \037.
     function bodyline(ln,    m, parts, x, out) {
@@ -507,19 +539,25 @@ shell_segments() {
           if (tg && (c == "$" || c == "`")) wdyn = 1
           w = w c; continue
         }
-        if (c == "\\") { flag("backslash"); i++; if (nx != "\n") { w = w nx; hw = 1 } continue }
-        if (c == "\047" || c == "\"") { if (c == "\047" && substr(s, i - 1, 1) == "$") flag("ansi"); q = c; hw = 1; continue }
+        if (c == "\\") { flag("backslash"); i++; wq = 1; if (nx != "\n") { w = w nx; hw = 1 } continue }
+        if (c == "\047" || c == "\"") { if (c == "\047" && substr(s, i - 1, 1) == "$") flag("ansi"); q = c; hw = 1; wq = 1; continue }
         if (c == "`") { flag("subst"); cut = 1; endseg(); continue }
+        if (c == "(") pd++
+        if (c == ")" && pd) pd--
         # Arithmetic ($((…)), ((…)), $[…]) is followed by its open parentheses (ad) and
         # brackets (ab): a << inside it is a shift, not a here-document.
-        if (c == "$" && nx == "(") { flag("subst"); cut = 1; endseg(); if (ad) ad++; else if (substr(s, i + 2, 1) == "(") ad = 1; i++; continue }
+        if (c == "$" && nx == "(") { flag("subst"); cut = 1; endseg(); pd++; if (ad) ad++; else if (substr(s, i + 2, 1) == "(") ad = 1; i++; continue }
         if (c == "#" && !hw) { flag("comment"); while (i < n && substr(s, i + 1, 1) != "\n") i++; continue }
         if (c == " " || c == "\t") { endword(); continue }
-        if (c == "\n") { endseg(); if (hn > hi) i = bodies(i + 1) - 1; ls = 0; continue }
-        if (c == "|") { if (nx == "|") i++; else flag("pipe"); endseg(); continue }
+        if (c == "\n") { endseg(); sep(); if (hn > hi) i = bodies(i + 1) - 1; ls = 0; continue }
+        if (c == "|") {
+          endseg()
+          if (nx == "|") { i++; sep() } else { flag("pipe"); if (pp) { print "\007|"; pj = 1 } }
+          continue
+        }
         if (c == "(") { if (ad) ad++; else if (nx == "(") ad = 1 }
         if (c == ")" && ad) ad--
-        if (c == ";" || c == "&" || c == "(" || c == ")") { endseg(); continue }
+        if (c == ";" || c == "&" || c == "(" || c == ")") { endseg(); if (c == ";" || c == "&") sep(); continue }
         # A here-string (<<<) is a redirection: the word after it is its body.
         if (c == "<" && nx == "<" && substr(s, i + 2, 1) == "<") { flag("redirect"); endword(); hsw = 1; i += 2; continue }
         # A here-document (<< or <<-) outside arithmetic: read its delimiter; the body
@@ -815,15 +853,16 @@ bash_heredoc_text() {
 # stdin, or given something that is not a file path. Any other command that does not
 # only read data (csh, expect, sqlite3, vim, Rscript, sudo, ...) runs what it is given:
 # a word of it naming a git commit (`csh -c "git commit"`) is a commit, and so is a
-# here-document it reads that runs one, or, with a pipe in the command, a `git` followed
-# by `commit` anywhere in the command, with quotes removed (`echo 'git commit' | csh`).
+# here-document it reads that runs one, or, when it is in a pipeline (#44: the commands
+# joined by | around it, a compound command among them read whole), a `git` followed by
+# `commit` anywhere in that pipeline, with quotes removed (`echo 'git commit' | csh`).
 # git given its subcommand by xargs or parallel, or a {} one, is a commit; a
 # subcommand in a $variable is assembled at run time and is not seen (R-23). A real
 # git commit beside a construct that falls back is a commit whatever the text rule says.
 git_commit_text() {
   local cmd="$1" out verdict
   if [ "${#cmd}" -le 65536 ]; then
-    out=$(shell_segments "$cmd" | awk -F'\037' '
+    out=$(shell_segments "$cmd" pipes | awk -F'\037' '
       function base(x) { sub(/.*\//, "", x); return x }
       # The text rule (at the end) on one line of text.
       function text_commits(x) { return x ~ /(^|[^A-Za-z0-9_]|\\[ntr])[Gg][Ii][Tt]([^-.\/A-Za-z0-9_]|[^A-Za-z0-9_].*[^-.\/A-Za-z0-9_])commit([^A-Za-z0-9_]|$)/ }
@@ -833,7 +872,9 @@ git_commit_text() {
       /^\001subst$/ { fb = 1; next }
       # $'...' can spell an alias value the text does not show.
       /^\001ansi$/ { opaque = 1; next }
-      /^\001pipe$/ { pipe = 1; next }
+      # A new pipeline (np), and a | inside it (#44).
+      /^\007$/ { np++; next }
+      /^\007\|$/ { pipe[np] = 1; next }
       /^\001/ { next }
       # A here-document body is data when every simple command on the line that opened
       # it only reads data or is git, which judges its own subcommand (commit -F -,
@@ -867,7 +908,7 @@ git_commit_text() {
         # A script the agent wrote can commit without showing it (R-23).
         sp = !kn && $k ~ /\// && $k !~ /^[\/~]/ && $k !~ /(^|\/)\.\.(\/|$)/ && cb ~ /\.(sh|bash|zsh|py|rb|pl|js|mjs|cjs|ts|php)$/
         isb = body; body = 0
-        if (!isb) { data[++nseg] = dr || tolower(cb) == "git"; if (!kn) { if (sp) spunk = 1; else unk = 1 } }
+        if (!isb) { data[++nseg] = dr || tolower(cb) == "git"; if (!kn) { if (sp) spunk[np] = 1; else unk[np] = 1 } }
         # Any other command runs a code string it is given (csh -c, expect -c, sqlite3
         # .shell, vim -c, Rscript -e, sudo csh -c): a word that names a git commit by the
         # text rule is one.
@@ -934,14 +975,14 @@ git_commit_text() {
         }
         if (seghit) { hit = 1; text = text line "\n" }
         if (g) gtext = gtext line "\n"
-        if (!isb) words = words " " line
+        if (!isb) words[np] = words[np] " " line
       }
       END {
         # After a cd a script path may name any file: judge it as a code runner.
-        if (moved) { if (spcode) code = 1; if (spunk) unk = 1 }
-        # A pipe into a command that is not a known reader: the text rule on the whole
-        # command with quotes removed.
-        if (pipe && unk && text_commits(words)) code = 1
+        if (moved) { if (spcode) code = 1; for (x in spunk) unk[x] = 1 }
+        # A pipe into a command that is not a known reader: the text rule on that
+        # pipeline with quotes removed (#44), not on the rest of the line.
+        for (x in unk) if (pipe[x] && text_commits(words[x])) code = 1
         if (code || (fb && hit)) print "code"
         else if (fb) print "fallback"
         else if (hit) printf "commit\n%s", text
