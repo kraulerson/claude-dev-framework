@@ -88,6 +88,26 @@ test_commit_after_herestring_checked() {
   teardown_test_project
 }
 
+# --- Test (#43): a commit of framework files only (.claude/framework/, put there by the
+# sync, also a sub-project's in a monorepo) changes no project source, so it needs no changelog; project source still does ---
+test_framework_only_commit_not_checked() {
+  setup_test_project
+  jq '.projectConfig._base.changelogFile = "CHANGELOG.md"' "$TEST_DIR/.claude/manifest.json" > "$TEST_DIR/.claude/manifest.json.tmp"
+  mv "$TEST_DIR/.claude/manifest.json.tmp" "$TEST_DIR/.claude/manifest.json"
+
+  echo 'echo v2' > "$TEST_DIR/.claude/framework/hooks/x.sh"
+  mkdir -p "$TEST_DIR/sub/.claude/framework/gates"
+  echo 'exit 0' > "$TEST_DIR/sub/.claude/framework/gates/lint.sh"
+  git -C "$TEST_DIR" add .claude/framework/hooks/x.sh .claude/manifest.json sub/.claude/framework/gates/lint.sh
+  EXIT=$(run_hook_exit_code "$HOOK" "$COMMIT_INPUT")
+  assert_exit_code "0" "$EXIT" "a framework-only commit is not checked"
+  echo "// code" > "$TEST_DIR/app.kt"
+  git -C "$TEST_DIR" add app.kt
+  EXIT=$(run_hook_exit_code "$HOOK" "$COMMIT_INPUT")
+  assert_exit_code "2" "$EXIT" "project source beside framework files is still checked"
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "pre-commit-checks.sh"
 test_non_commit_passes
@@ -96,4 +116,5 @@ test_source_without_changelog_blocks
 test_chained_commit_triggers_checks
 test_commit_word_in_text_not_checked
 test_commit_after_herestring_checked
+test_framework_only_commit_not_checked
 run_tests

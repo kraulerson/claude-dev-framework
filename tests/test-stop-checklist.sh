@@ -349,6 +349,32 @@ test_many_untracked_files_stay_fast() {
 
 # --- Run all tests ---
 echo "stop-checklist.sh"
+# --- Test (#43): files under .claude/framework/ are the framework's, put there by its
+# sync, so an uncommitted sync is no uncommitted source and a sync commit that names an
+# upstream fix is no untested fix; a project fix with no test still warns ---
+test_framework_files_are_not_project_source() {
+  setup_stop_test
+  git -C "$TEST_DIR" rev-parse HEAD > "/tmp/.claude_session_start_${TEST_HASH}"
+  echo 'echo v2' > "$TEST_DIR/.claude/framework/hooks/x.sh"
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  assert_not_contains "$RESULT" "Uncommitted source changes" "uncommitted .claude/framework/ files are not uncommitted source"
+  jq '.frameworkVersion = "4.4.11"' "$TEST_DIR/.claude/manifest.json" > "$TEST_DIR/.claude/manifest.json.tmp"
+  mv "$TEST_DIR/.claude/manifest.json.tmp" "$TEST_DIR/.claude/manifest.json"
+  git -C "$TEST_DIR" add .claude/framework/hooks/x.sh .claude/manifest.json
+  git -C "$TEST_DIR" commit -qm "chore(framework): sync CDF 4.4.10 -> 4.4.11: here-string approval-bypass fix"
+  rm -f /tmp/.claude_stop_errors_hash_${TEST_HASH}_*
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  assert_not_contains "$RESULT" "bug fix" "a framework sync commit naming an upstream fix is no untested fix"
+  mkdir -p "$TEST_DIR/src"
+  echo "x = 1" > "$TEST_DIR/src/x.py"
+  git -C "$TEST_DIR" add src/x.py
+  git -C "$TEST_DIR" commit -qm "fix: crash on empty input"
+  rm -f /tmp/.claude_stop_errors_hash_${TEST_HASH}_*
+  RESULT=$(run_hook "$HOOK" "$STOP_INPUT")
+  assert_contains "$RESULT" "bug fix" "a project fix with no test still warns"
+  teardown_test_project
+}
+
 test_stop_hook_active_short_circuits
 test_clean_state_passes
 test_uncommitted_source_blocks
@@ -368,4 +394,5 @@ test_untracked_folder_judged_by_its_files
 test_path_with_space_judged_whole
 test_renamed_file_judged_by_new_name
 test_many_untracked_files_stay_fast
+test_framework_files_are_not_project_source
 run_tests

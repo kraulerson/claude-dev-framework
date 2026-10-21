@@ -1313,6 +1313,59 @@ CMDS
   teardown_test_project
 }
 
+# --- Test (#45): a Bash write anywhere under .claude/framework/ is refused, not only in
+# hooks/: the gates pre-commit-checks runs, the rules, a new file there or at its root ---
+test_framework_writes_refused() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    cmd=$(printf '%b' "$cmd")
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd" "$TEST_DIR")")
+    assert_exit_code "2" "$EXIT_CODE" "a framework write must be refused: $cmd"
+  done << 'CMDS'
+echo 'exit 0' > .claude/framework/gates/x.sh
+echo '# x' > .claude/framework/rules/x.md
+cat > .claude/framework/gates/lint.sh <<'EOF'\nexit 0\nEOF
+cp /tmp/x.sh .claude/framework/gates/lint.sh
+cp /dev/null .claude/framework/rules/evaluate-before-implement.md
+mv /tmp/x.md .claude/framework/rules/x.md
+sed -i '' 's/must/may/' .claude/framework/rules/evaluate-before-implement.md
+echo x | tee .claude/framework/gates/lint.sh
+touch .claude/framework/new-file.sh
+echo x > .claude/framework/visual-auditor.sh
+rm .claude/framework/gates/lint.sh
+chmod -x .claude/framework/gates/lint.sh
+CMDS
+  teardown_test_project
+}
+
+# --- Test (#45): reads, git add, the documented sync and prose that names those paths
+# still pass ---
+test_framework_reads_still_pass() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd" "$TEST_DIR")")
+    assert_exit_code "0" "$EXIT_CODE" "must still be allowed: $cmd"
+  done << 'CMDS'
+cat .claude/framework/gates/lint.sh
+grep -rn "approval" .claude/framework/rules/
+ls .claude/framework/gates .claude/framework/rules
+diff .claude/framework/rules/evaluate-before-implement.md /tmp/rule.md
+cmp .claude/framework/gates/lint.sh /tmp/lint.sh
+git diff -- .claude/framework/gates/lint.sh
+git log --oneline -- .claude/framework/rules/
+git show HEAD:.claude/framework/gates/lint.sh
+git add .claude/framework/gates/lint.sh .claude/framework/rules/evaluate-before-implement.md
+bash ~/.claude-dev-framework/scripts/sync.sh
+bash .claude/framework/hooks/mark-plan-closed.sh "planned vs actual matched"
+git commit -m "chore(framework): sync .claude/framework/gates and rules to 4.4.11"
+echo "Refreshes .claude/framework/rules via sync.sh"
+printf '%s\n' "(Stage .claude/framework/gates/lint.sh"
+CMDS
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "config-guard.sh"
 test_blocks_write_settings
@@ -1400,4 +1453,6 @@ test_state_hook_refusal_names_the_part
 test_mark_plan_active_lone_call_allowed
 test_mark_plan_active_other_forms_refused
 test_herestring_word_counts
+test_framework_writes_refused
+test_framework_reads_still_pass
 run_tests

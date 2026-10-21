@@ -87,7 +87,7 @@ while IFS= read -r -d '' entry; do
   f="${entry:3}"
   [ -n "$f" ] || continue
   PATHS+=("$f")
-  [ "$HAS_SOURCE" = true ] || { is_source_file "$f" 2>/dev/null && HAS_SOURCE=true; }
+  [ "$HAS_SOURCE" = true ] || is_framework_managed "$f" 2>/dev/null || { is_source_file "$f" 2>/dev/null && HAS_SOURCE=true; }
 done < <(git status --porcelain -uall -z 2>/dev/null || true)
 # bash 3.2 under set -u treats an empty "${PATHS[@]}" as unbound.
 [ "${#PATHS[@]}" -eq 0 ] || printf -v ALL '%s\n' "${PATHS[@]}"
@@ -119,7 +119,7 @@ compute_errors() {
         current_has_source=false
       elif [ -n "$line" ] && [ -n "$current_sha" ]; then
         is_test_file "$line" && current_has_test=true
-        is_source_file "$line" 2>/dev/null && current_has_source=true
+        is_framework_managed "$line" 2>/dev/null || { is_source_file "$line" 2>/dev/null && current_has_source=true; }
       fi
     done <<< "$commit_log"
     if [ -n "$current_sha" ] && echo "$current_msg" | grep -qiE '\b(fix|bug|patch|hotfix|repair|resolve)\b'; then
