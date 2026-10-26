@@ -1366,6 +1366,152 @@ CMDS
   teardown_test_project
 }
 
+# --- Test (#47): a word that could change what a command name runs (alias, function,
+# export, declare, typeset, readonly, hash, enable, eval, source) makes the call strict
+# only as a word the shell runs, not in a commit message's or echo's text: the Pantheon
+# sync message ("… project⏎source for the stop …") named stop-checklist.sh on a later
+# line and was refused. `.` with no protected name is unaffected ---
+test_prose_shell_keywords_pass() {
+  local cmd w
+  setup_test_project
+  while IFS= read -r cmd; do
+    cmd=$(printf '%b' "$cmd")
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input "$cmd" "$TEST_DIR")")
+    assert_exit_code "0" "$EXIT_CODE" "must pass: $cmd"
+  done << 'CMDS'
+git commit -m "chore(framework): sync CDF 4.4.10 -> 4.4.11 (4718c36): false-alarm fixes #43 #44 #45\n\nSynced by the cdf session (Karl's go, 2026-10-21). 5 paths: _helpers.sh,\nconfig-guard.sh, pre-commit-checks.sh, stop-checklist.sh and the manifest\n(frameworkVersion 4.4.11). Framework files no longer count as project\nsource for the stop and pre-commit checks; the pipe rule reads only its\nown pipeline; all of the framework folder is write-protected. Project\nhooks, non-hook settings and process-state.json unchanged per cdf.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01YGpRzXnfCc5PzATWDENE7e"
+git commit -m "adds stop-checklist.sh; project source unchanged"
+printf '%s' "the eval step of record-approval.sh"
+. venv/bin/activate && pytest
+CMDS
+  for w in alias function export declare typeset readonly hash enable eval source; do
+    cmd="git commit -m \"sync\" -m \"Adds record-approval.sh; $w note on .claude/settings.json\""
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input "$cmd" "$TEST_DIR")")
+    assert_exit_code "0" "$EXIT_CODE" "a commit message saying $w must pass: $cmd"
+  done
+  teardown_test_project
+}
+
+# --- Test (#47): those words still make the call strict where the shell runs them — as
+# a command word, quoted or not, after builtin, command, time, if or !, in another
+# command's words, in a here-document body, anywhere in a line with a pipe (zsh runs a
+# pipeline's last command in the current shell) — and so do zsh's aliases[…],
+# functions[…] and commands[…] and `.` (source) or a $ word as the command word, also
+# after exec and zsh's noglob, nocorrect, - and repeat N: a sourced file can redefine
+# echo ---
+test_strict_command_words_still_refused() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    cmd=$(printf '%b' "$cmd")
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input "$cmd" "$TEST_DIR")")
+    assert_exit_code "2" "$EXIT_CODE" "must be refused: $cmd"
+  done << 'CMDS'
+alias echo=bash; echo "adds record-approval.sh"
+"alias" echo=bash; echo "adds record-approval.sh"
+builtin alias echo=bash; echo "adds record-approval.sh"
+time alias echo=bash; echo "adds record-approval.sh"
+if alias echo=bash; then echo "adds record-approval.sh"; fi
+! export PATH=/tmp/x; git commit -m "adds record-approval.sh"
+export PATH=/tmp/fake; git log --format=" .claude/settings.json"
+f() { bash "$@"; }; echo "adds record-approval.sh"
+function echo { bash "$@"; }; echo "adds record-approval.sh"
+source /tmp/defs; echo "adds record-approval.sh"
+eval x; git commit -m "adds record-approval.sh"
+git commit -m "export" && alias echo=bash; echo "adds record-approval.sh"
+cat <<'EOF'\nalias echo=bash\nEOF\necho "adds record-approval.sh"
+echo "x"\nbash .claude/framework/hooks/record-approval.sh
+. /tmp/defs; echo "adds record-approval.sh"
+"." /tmp/defs; echo "adds record-approval.sh"
+builtin . /tmp/defs; git commit -m "adds .claude/settings.json"
+command . /tmp/defs; echo "adds record-approval.sh"
+X=1; . /tmp/defs && echo "adds record-approval.sh"
+printf 'alias ll=x\\n' | noglob . /dev/stdin; echo "adds record-approval.sh"
+printf 'alias ll=x\\n' | nocorrect . /dev/stdin; echo "adds record-approval.sh"
+printf 'alias ll=x\\n' | - . /dev/stdin; echo "adds record-approval.sh"
+printf 'alias ll=x\\n' | repeat 1 . /dev/stdin; echo "adds record-approval.sh"
+noglob . /tmp/defs; echo "adds record-approval.sh"
+nocorrect . /tmp/defs; echo "adds record-approval.sh"
+- . /tmp/defs; echo "adds record-approval.sh"
+exec . /tmp/defs; echo "adds record-approval.sh"
+printf 'alias ll=x\\n' | exec -a x . /dev/stdin; echo "adds record-approval.sh"
+echo 'alias ll=x' > /tmp/d; noglob . /tmp/d; echo "adds record-approval.sh"
+repeat 1 do . /tmp/defs; done; echo "adds record-approval.sh"
+repeat 1 { . /tmp/defs }; echo "adds record-approval.sh"
+X=.; printf 'alias ll=x\\n' | $X /dev/stdin; echo "adds record-approval.sh"
+printf 'alias ll=x' > /tmp/d; X=.; $X /tmp/d; echo "adds record-approval.sh"
+aliases[echo]=bash; echo "adds record-approval.sh"
+functions[echo]='bash'; echo "adds record-approval.sh"
+commands[git]=/tmp/x; git commit -m "adds record-approval.sh"
+CMDS
+  teardown_test_project
+}
+
+# --- Test (#47 review): in a line with an unquoted pipe, a coprocess (coproc, >&p), a
+# redirect to or from fd 3 or above, or a fifo (mkfifo, mknod), echo, printf, git and
+# script text is not prose: it can be the code a shell or interpreter reads from that
+# channel (`echo 'echo {} > .claude/settings.json' | sh` wiped every hook registration),
+# so a name anywhere in it counts ---
+test_piped_text_is_strict() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input "$cmd" "$TEST_DIR")")
+    assert_exit_code "2" "$EXIT_CODE" "must be refused: $cmd"
+  done << 'CMDS'
+echo 'echo {} > .claude/settings.json' | sh
+printf 'cp x .claude/settings.json' | bash
+printf 'bash record-approval.sh' | bash
+printf 'cp x .claude/settings.json' | zsh
+echo 'cp x .claude/framework/gates/a.sh' | bash
+printf 'mark-evaluated.sh' | sh
+echo "cd .claude/framework/hooks; bash record-approval.sh" | sh
+git log -1 --format='cp x .claude/settings.json' | bash
+echo 'echo {} > .claude/settings.json' | tee /tmp/s | sh
+echo '{}' | tee .claude/settings.json
+coproc sh; echo 'cp x .claude/settings.json' >&p
+coproc bash; printf 'bash record-approval.sh' >&p
+mkfifo f; sh < f & echo 'cp x .claude/settings.json' > f
+/usr/bin/mkfifo f; sh < f & printf 'bash record-approval.sh' > f
+coproc sh; echo 'cp x .claude/settings.json' >&"${COPROC[1]}"
+coproc sh; echo 'cp x .claude/settings.json' > /dev/fd/${COPROC[1]}
+exec 4>/tmp/x; echo 'cp x .claude/settings.json' >&4
+exec 3>&1; echo 'cp x .claude/settings.json' >&3
+CMDS
+  RESULT=$(run_hook "$HOOK" "$(cg_real_input 'git commit -m "adds record-approval.sh" 2>&1 | tail -3' "$TEST_DIR")")
+  assert_contains "$RESULT" "BLOCKED — This line has a pipe, coprocess, fd 3+ redirect or fifo" "a piped prose refusal says why first"
+  assert_contains "$RESULT" "drop the pipe (or the coprocess/fifo), or reword" "and how to fix it"
+  RESULT=$(run_hook "$HOOK" "$(cg_real_input 'bash /tmp/clone/hooks/record-approval.sh' "$TEST_DIR")")
+  assert_not_contains "$RESULT" "drop the pipe" "a line with no channel gets no pipe hint"
+  teardown_test_project
+}
+
+# --- Test (#47 review): a piped line that only reads still passes, and so does prose
+# in a line without a pipe, also with 2>&1, >&2 or >/dev/null, or >&p in quoted text ---
+test_piped_reads_still_pass() {
+  local cmd
+  setup_test_project
+  while IFS= read -r cmd; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_real_input "$cmd" "$TEST_DIR")")
+    assert_exit_code "0" "$EXIT_CODE" "must pass: $cmd"
+  done << 'CMDS'
+echo ".claude/settings.json" | grep x
+git log --grep "record-approval.sh" | head -3
+cat .claude/settings.json | jq .
+git show HEAD -- .claude/framework/hooks/record-approval.sh | head -20
+echo "adds record-approval.sh"
+git commit -m "Adds the hooks record-approval.sh and mark-plan-closed.sh; project source unchanged"
+echo "adds record-approval.sh" 2>&1
+echo x >&2
+git commit -m "adds record-approval.sh" 2>&1
+git commit -m "adds record-approval.sh" >&2
+git commit -m "adds record-approval.sh" 1>&2
+git commit -m "adds record-approval.sh" >/dev/null 2>&1
+git commit -m "adds record-approval.sh; see the >&p note"
+CMDS
+  teardown_test_project
+}
+
 # --- Run all tests ---
 echo "config-guard.sh"
 test_blocks_write_settings
@@ -1455,4 +1601,8 @@ test_mark_plan_active_other_forms_refused
 test_herestring_word_counts
 test_framework_writes_refused
 test_framework_reads_still_pass
+test_prose_shell_keywords_pass
+test_strict_command_words_still_refused
+test_piped_text_is_strict
+test_piped_reads_still_pass
 run_tests

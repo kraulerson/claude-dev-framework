@@ -98,26 +98,53 @@ fi
 # marked R or S and with `//`, `/./` and `x/../` collapsed. R: an argument of a command
 # that only takes text — echo, printf, git commit/log/show/tag with no -c or
 # --config-env, or a shell or interpreter running a script file (bash scripts/x.sh
-# "…") — where a name counts only where it is a path: at the start of the word or after
-# a character that is no part of a name in prose (/ = : , @ { …). S: everything else —
+# "…") in a line without a channel to another process — where a name counts only where
+# it is a path: at the start of the word or after a character that is no part of a name
+# in prose (/ = : , @ { …). A channel is an unquoted |, a coprocess (the word coproc, an
+# unquoted >&p or <&p), an unquoted redirect to or from fd 3 or above or a $ fd (>&4,
+# 3>&1, >&"${COPROC[1]}"; not 2>&1 or >&2) or a fifo (the word mkfifo or mknod; these
+# three words count anywhere, quoted or not): there that text can be the code a shell
+# reads from it (`echo 'echo {} > .claude/settings.json' | sh`), so it is S
+# (WORDS_PIPED=1). S: everything else —
 # sed's `w file`, awk, bash -c, find -exec, git grep -O, a here-document — where text is
 # code or a target, so any occurrence counts. Every word with a `$` (an $IFS can split
 # it at run time) is S too, and so is every word of a line that could change what those
-# command names run: an assignment in front of them, a function, alias, export,
-# declare, typeset, hash, enable, eval or source anywhere in the call. Fails for a line
-# the split cannot follow (substitution, backslash, $'...', an open quote, a comment), a
-# very long one, an older _helpers.sh, or a split that errors: the callers then match
-# the whole text, as before.
+# command names run: an assignment in front of them, a function definition (any `()` in
+# the text: zsh takes a quoted name), or alias, export, declare, typeset, readonly, hash,
+# enable, eval or source, or zsh's aliases[…], functions[…] or commands[…], in any word
+# but an R command's text (#47: "project source" in a commit message is prose; a line with
+# a pipe has none: zsh runs a pipeline's last command in the current shell), or `.` or a
+# $ word as the command word, also after builtin, command, exec, time and zsh's noglob,
+# nocorrect, - and repeat N. Fails for a line the split cannot follow (substitution,
+# backslash, $'...', an open quote, a comment), a very long one, an older _helpers.sh, or
+# a split that errors: the callers then match the whole text, as before.
 WORDS=""
+WORDS_PIPED=0
 command_words() {
-  local segs strict_line=0
+  local segs strict_line=0 piped=0 unq
   type shell_segments >/dev/null 2>&1 && [ "${#COMMAND}" -le 65536 ] || return 1
   segs=$(shell_segments "$COMMAND") || return 1
   grep -qE $'^\001(subst|backslash|ansi|unterminated|comment)$' <<< "$segs" && return 1
-  grep -qE '(^|[^[:alnum:]_])(alias|function|export|declare|typeset|readonly|hash|enable|eval|source)([^[:alnum:]_]|$)|[[:alnum:]_][[:space:]]*\([[:space:]]*\)' <<< "$COMMAND" && strict_line=1
-  WORDS=$(awk -F'\037' -v strict="$strict_line" '
+  grep -qE '[[:alnum:]_][[:space:]]*\([[:space:]]*\)' <<< "$COMMAND" && strict_line=1
+  # The text outside quotes, quote marks kept, for the redirects the split drops.
+  unq=$(awk '{ s = s (NR > 1 ? "\n" : "") $0 }
+    END { n = length(s); q = ""; out = ""
+      for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1)
+        if (q == "\047") { if (c == q) { q = ""; out = out c } continue }
+        if (q == "\"") { if (c == "\\") i++; else if (c == q) { q = ""; out = out c } continue }
+        if (c == "\047" || c == "\"") q = c
+        out = out c
+      }
+      print out }' <<< "$COMMAND") || return 1
+  grep -qE $'^\001pipe$' <<< "$segs" && piped=1
+  grep -qE '(^|[^[:alnum:]_])(coproc|mkfifo|mknod)([^[:alnum:]_]|$)' <<< "$segs" && piped=1
+  grep -qE '[<>]&[[:space:]]*(p([^[:alnum:]_./-]|$)|([3-9]|[1-9][0-9]+)([^0-9]|$)|["'"'"'$])|(^|[^[:alnum:]_])([3-9]|[1-9][0-9]+)[<>]&' <<< "$unq" && piped=1
+  WORDS_PIPED=$piped
+  WORDS=$(awk -F'\037' -v strict="$strict_line" -v piped="$piped" '
+    function kw(x) { return x ~ /(^|[^[:alnum:]_])((alias|function|export|declare|typeset|readonly|hash|enable|eval|source)([^[:alnum:]_]|$)|(aliases|galiases|saliases|functions|dis_aliases|dis_functions|commands)\[)/ }
     /^\001/ { next }
-    /^\002/ { for (j = 2; j <= NF; j++) print "S\t" $j; next }
+    /^\002/ { for (j = 2; j <= NF; j++) { if (kw($j)) strict = 1; o[++no] = "S\t" $j } next }
     {
       k = 1; pre = 0
       while (k <= NF && $k ~ /^(if|then|else|elif|fi|do|done|while|until|!|\{|\})$/) k++
@@ -131,9 +158,13 @@ command_words() {
         if ($m ~ /^(commit|log|show|tag)$/ && !cfg) r = 1
       }
       else if (c ~ /^(bash|sh|zsh|dash|ksh|python[0-9.]*|node|ruby|perl)$/ && $(k + 1) ~ /[\/.]/ && $(k + 1) !~ /^-/ && $(k + 1) !~ /^\/(dev|proc)\//) r = 1
-      if (strict || pre) r = 0
-      for (j = 1; j <= NF; j++) print ((r && $j !~ /\$/) ? "R" : "S") "\t" $j
-    }' <<< "$segs") || return 1
+      if (pre || piped) r = 0
+      m = k
+      while (m <= NF) { if ($m ~ /^(builtin|command|exec|time|noglob|nocorrect|-|-p|--|do|\{)$/) m++; else if ($m == "repeat") m += 2; else break }
+      if ($m == "." || $m ~ /\$/) strict = 1
+      for (j = 1; j <= NF; j++) { if (!r && kw($j)) strict = 1; o[++no] = ((r && $j !~ /\$/) ? "R" : "S") "\t" $j }
+    }
+    END { for (j = 1; j <= no; j++) { if (strict) sub(/^R/, "S", o[j]); print o[j] } }' <<< "$segs") || return 1
   WORDS=$(normalize_command_paths "$WORDS") || return 1
 }
 WORDS_OK=0
@@ -185,7 +216,11 @@ if names_state_hook; then
     [ -n "$PART" ] && [ -z "$HOOK_PART" ] && [ -n "$NAMED" ] \
       && WHY="This command names ${NAMED} and also contains ${PART}, which is not read-only; run it as a separate Bash call. "
   fi
-  printf "BLOCKED — %sRunning a framework hook that creates or clears workflow markers or approvals (mark-evaluated.sh, record-approval.sh, marker-tracker.sh, session-start.sh, session-end.sh, stop-checklist.sh, or mark-plan-closed.sh or mark-plan-active.sh other than as a lone command from the project root: bash .claude/framework/hooks/<script> \"<plain text>\"), or copying one, is not permitted, from any folder. Claude Code runs these hooks itself. mark-evaluated.sh is the user's own override, run in their separate terminal. To get a commit approved: stage the change, record the question in .claude/pending-approval.json (schema 2; see the enforce-evaluate block message for the exact shape) and stop; the user approves by replying with the option id. Reading these files (cat, grep, git log) is allowed. A commit message or echo text may name one after a blank or ( (\"adds record-approval.sh\"). At the start of the argument or after / = : and the like (\"hooks/record-approval.sh\") it reads as a path and is refused, as it is in a here-document, in an argument with a \$, and as the live install's hooks folder anywhere; reword it, or write the message to a file and use git commit -F <file>.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second.\n" "$WHY" >&2
+  # A line with a channel reads its echo, printf and commit text strictly; say so first.
+  PIPE_HINT=""
+  [ "$WORDS_OK" = 1 ] && [ "$WORDS_PIPED" = 1 ] \
+    && PIPE_HINT="This line has a pipe, coprocess, fd 3+ redirect or fifo, so its echo, printf and commit text is read as code: drop the pipe (or the coprocess/fifo), or reword. "
+  printf "BLOCKED — %s%sRunning a framework hook that creates or clears workflow markers or approvals (mark-evaluated.sh, record-approval.sh, marker-tracker.sh, session-start.sh, session-end.sh, stop-checklist.sh, or mark-plan-closed.sh or mark-plan-active.sh other than as a lone command from the project root: bash .claude/framework/hooks/<script> \"<plain text>\"), or copying one, is not permitted, from any folder. Claude Code runs these hooks itself. mark-evaluated.sh is the user's own override, run in their separate terminal. To get a commit approved: stage the change, record the question in .claude/pending-approval.json (schema 2; see the enforce-evaluate block message for the exact shape) and stop; the user approves by replying with the option id. Reading these files (cat, grep, git log) is allowed. A commit message or echo text may name one after a blank or ( (\"adds record-approval.sh\"), in a call with no pipe, coprocess or fifo. At the start of the argument or after / = : and the like (\"hooks/record-approval.sh\") it reads as a path and is refused, as it is in a here-document, in an argument with a \$, and as the live install's hooks folder anywhere; reword it, or write the message to a file and use git commit -F <file>.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second.\n" "$PIPE_HINT" "$WHY" >&2
   guard_block
 fi
 
