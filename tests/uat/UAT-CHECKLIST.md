@@ -96,6 +96,16 @@ When:  Same project initialized on both
 - [ ] Hooks fire identically on both machines
 - [ ] sync.sh updates both to the same version
 
+## Scenario 9: Guard Hooks Fail Closed (Claude Code 2.1.295 or later)
+
+```
+Given: A scratch project with the framework installed by init.sh or sync.sh on Claude Code 2.1.295+
+When:  In a terminal I run chmod -x .claude/framework/hooks/config-guard.sh, start Claude Code, and ask it to edit a source file
+```
+
+- [ ] The edit is refused, and the failure shown names config-guard.sh
+- [ ] After chmod +x .claude/framework/hooks/config-guard.sh a retry is no longer refused for config-guard.sh (other gates may still ask for their own steps)
+
 ---
 
 ## Notes

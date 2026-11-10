@@ -31,6 +31,10 @@ if [ ! -f "$FRAMEWORK_CLONE/FRAMEWORK_VERSION" ]; then
   exit 1
 fi
 command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required." >&2; exit 1; }
+# shellcheck disable=SC1090
+source "$FRAMEWORK_CLONE/scripts/_shared.sh"
+# Inside a Claude Code session, stop before anything is written if claude cannot be read.
+cdf_require_claude_in_session || exit 1
 
 # ---- Snapshot the BEFORE state (for the delta summary) ----------------------
 OLD_VERSION=$(jq -r '.frameworkVersion // "unknown"' "$MANIFEST")
@@ -181,8 +185,6 @@ echo "  activeHooks: ${#ALL_HOOKS[@]}   activeRules: ${#ALL_RULES[@]}"
 # ---- Regenerate settings.json -----------------------------------------------
 echo ""
 echo "── Regenerating settings.json ──"
-# shellcheck disable=SC1090
-source "$FRAMEWORK_CLONE/scripts/_shared.sh"
 HOOKS=("${ALL_HOOKS[@]}")
 SETTINGS=$(generate_settings_json "${HOOKS[@]}")
 if ! echo "$SETTINGS" | jq '.' >/dev/null 2>&1; then

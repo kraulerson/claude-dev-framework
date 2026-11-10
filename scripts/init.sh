@@ -142,6 +142,8 @@ parse_profile() {
 
 # ---- Shared functions (generate_settings_json, merge_hooks_into_settings) ----
 source "$(dirname "$0")/_shared.sh"
+# Inside a Claude Code session, stop before anything is written if claude cannot be read.
+cdf_require_claude_in_session || exit 1
 source "$FRAMEWORK_CLONE/hooks/_helpers.sh" 2>/dev/null || true
 
 # ---- Helper: Discovery Interview ----
