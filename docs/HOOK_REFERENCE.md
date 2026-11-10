@@ -12,6 +12,19 @@
 
 ---
 
+## Failure policy (#49)
+
+A hook that times out, exits with a code other than 0 or 2, cannot start (not executable, missing) or prints invalid JSON is, by default, a non-blocking error in Claude Code: the action it guards goes ahead. From Claude Code 2.1.295 a hook entry can say `"onFailure":"block"`, and a failing hook then does what exit code 2 does on that event.
+
+- **Fail closed (`"onFailure":"block"`, `"timeout":30`):** the nine PreToolUse hooks that block (exit 2): enforce-evaluate, enforce-superpowers, pre-commit-checks, branch-safety, marker-guard, config-guard, enforce-plan-tracking, enforce-context7, and verification-gate with `"timeout":600`, since it runs the project's linters. Also marker-tracker (PostToolUse): the failure is shown to Claude; PostToolUse cannot block.
+- **No failure policy (`type` and `command` only):** session-start, session-end, stop-checklist and compliance-reinforce; record-approval, whose fail direction is never to block the user's prompt (see record-approval.sh below); and changelog-sync-check, scalability-check and pre-deploy-check, which are advisory and never exit 2.
+- **Version gate:** `init.sh`, `sync.sh` and `migrations/v4.sh` read the version from `claude --version` on PATH, first line, with no timeout; there is no override. That is the terminal's `claude`, which can differ from a Claude Code bundled with the Desktop app or an IDE. A version is three parts of 1 to 9 digits. At 2.1.295 or later the entries get `onFailure`. Below it, or (outside a Claude Code session) when `claude` prints no version or there is no `claude` on PATH, they write the timeouts without `onFailure` and print one warning to stderr naming what was found, the 2.1.295 floor, that guard hooks will not fail closed when they time out, crash or cannot start, and the fix for that case (`claude update`; install Claude Code; check `claude --version`), then re-run `sync.sh`.
+- **Inside a Claude Code session** (`CLAUDECODE` non-empty), a `claude` that is missing from PATH or prints no version is an error, not a downgrade: `cdf_require_claude_in_session` stops `init.sh` (after its options are read, so `--help` works), `sync.sh` and `migrations/v4.sh` with exit 1 before they write anything, and `generate_settings_json` returns 1 too. An old version is still a warning there.
+- **Floor on older Claude Code:** config-guard and marker-guard keep their EXIT trap, so a crash inside either still exits 2 and blocks; a hook that hangs or cannot start is not covered there.
+- **Residual:** Solo Orchestrator's `soif_cdf_register_hooks` rebuilds the entries as `{type, command}` and discards the generator's stderr, so a Solo-registered project gets neither the policy nor the warning (a Solo issue is pending). A fake `claude` (a shell function, or a script earlier on PATH) is not inspected (R-23), so it can report any version. `sync.sh` and `init.sh` themselves are not yet refused to the agent (config-guard does not read a command that runs them); that is a separate ruling. verification-gate's 600 s now refuses a commit whose gates run longer; that is intended.
+
+---
+
 ## Source writes through Bash (#39)
 
 The five source-edit gates (enforce-superpowers, enforce-plan-tracking, enforce-context7, scalability-check, changelog-sync-check) are registered for `Bash|Write|Edit|NotebookEdit`. On a Bash call each one reads the literal files the command writes with `bash_write_targets` in `_helpers.sh` and runs its own Write check on each file, as a Write of that path; the first refusal wins, and the message starts `This Bash command writes <path>. A file written through Bash gets the same check as a Write or Edit of it:` followed by the gate's usual block and remedy.

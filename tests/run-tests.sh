@@ -3,6 +3,8 @@
 set -uo pipefail
 
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
+# The suite simulates a human run; test-hook-failure-policy.sh sets CLAUDECODE where it wants it.
+unset CLAUDECODE
 TOTAL_FILES=0
 PASSED_FILES=0
 FAILED_FILES=0

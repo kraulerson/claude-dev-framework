@@ -5,6 +5,8 @@ set -euo pipefail
 FRAMEWORK_CLONE="$HOME/.claude-dev-framework"
 MANIFEST=".claude/manifest.json"
 source "$(dirname "$0")/_shared.sh"
+# Inside a Claude Code session, stop before anything is written if claude cannot be read.
+cdf_require_claude_in_session || exit 1
 
 # Safety checks
 if [ ! -d ".claude/framework" ]; then
