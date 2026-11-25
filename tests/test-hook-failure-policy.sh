@@ -67,7 +67,8 @@ check_supported() {
   local cc="$1" tmp out; tmp=$(mktemp -d)
   out=$(gen_with "$BIN_NEW" "$cc" "${ALL_HOOKS[@]}" 2>"$tmp/err")
   assert_equals "" "$(cat "$tmp/err")" "supported (CLAUDECODE='$cc'): no warning"
-  assert_equals "18" "$(entry_lines "$out" | wc -l | tr -d ' ')" "supported: 18 entries (17 hooks and record-approval)"
+  assert_equals "20" "$(entry_lines "$out" | wc -l | tr -d ' ')" \
+    "supported: 20 entries (17 hooks, record-approval, runaway-scan on SessionStart and Stop)"
   assert_equals "10" "$(entry_lines "$out" | grep -c '|block|')" \
     "supported: 10 entries block (9 blocking PreToolUse hooks, marker-tracker)"
   assert_equals "9" "$(entry_lines "$out" | grep -cE "^PreToolUse\|($BLOCKING)\.sh\|[0-9]+\|block\|command,onFailure,timeout,type$")" \
@@ -81,6 +82,9 @@ check_supported() {
     "$(entry_lines "$out" | grep '|marker-tracker.sh|')" "supported: marker-tracker blocks, timeout 30"
   assert_equals "8" "$(entry_lines "$out" | grep -cE "\|($NO_POLICY)\.sh\|-\|-\|command,type$")" \
     "supported: the 8 others (4 lifecycle hooks, record-approval, 3 advisory checks) keep type+command only"
+  assert_equals "SessionStart|runaway-scan.sh|10|-|command,timeout,type
+Stop|runaway-scan.sh|10|-|command,timeout,type" "$(entry_lines "$out" | grep '|runaway-scan.sh|' | sort)" \
+    "supported: runaway-scan on SessionStart and Stop, timeout 10, no onFailure (a report never blocks)"
   assert_equals "number" "$(jq -r '[.hooks[][].hooks[] | select(.timeout) | .timeout | type] | unique | join(",")' <<< "$out")" \
     "supported: every timeout is a number"
   rm -rf "$tmp"
@@ -102,8 +106,8 @@ check_unsupported() {
   assert_equals "0" "$?" "unsupported ($label): stdout is valid JSON"
   assert_equals "0" "$(jq '[.hooks[][].hooks[] | select(has("onFailure"))] | length' <<< "$out")" \
     "unsupported ($label): no entry has onFailure"
-  assert_equals "10" "$(jq '[.hooks[][].hooks[] | select(.timeout | type == "number")] | length' <<< "$out")" \
-    "unsupported ($label): the 10 guard entries keep their timeout"
+  assert_equals "12" "$(jq '[.hooks[][].hooks[] | select(.timeout | type == "number")] | length' <<< "$out")" \
+    "unsupported ($label): the 10 guard entries and the 2 runaway-scan entries keep their timeout"
   assert_equals "1" "$(grep -c 'WARNING' "$tmp/err")" "unsupported ($label): exactly one warning"
   assert_equals "1" "$(grep -c '2\.1\.295' "$tmp/err")" "unsupported ($label): warning names the 2.1.295 floor"
   assert_equals "1" "$(grep -c 'will not fail closed when they time out, crash or cannot start' "$tmp/err")" \
@@ -267,13 +271,89 @@ JSON
   assert_equals '600|block' \
     "$(jq -r '.hooks.PreToolUse[].hooks[] | select(.command | endswith("/verification-gate.sh")) | "\(.timeout)|\(.onFailure)"' "$tmp/settings.json")" \
     "merge: verification-gate entry carries timeout 600 and onFailure"
-  assert_equals '[{"type":"command","command":"\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/session-start.sh"}]' \
+  assert_equals '[{"type":"command","command":"\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/session-start.sh"},{"type":"command","command":"\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/runaway-scan.sh","timeout":10}]' \
     "$(jq -c '.hooks.SessionStart[0].hooks' "$tmp/settings.json")" \
-    "merge: session-start entry keeps type+command only"
+    "merge: session-start entry keeps type+command only; runaway-scan beside it, timeout 10"
+  assert_equals '[{"type":"command","command":"\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/runaway-scan.sh","timeout":10}]' \
+    "$(jq -c '[.hooks.Stop[].hooks[]]' "$tmp/settings.json")" "merge: runaway-scan on Stop, timeout 10"
+  assert_equals "1" "$(jq '[.permissions.deny[] | select(. == "Edit(/.claude/watchdog.jsonl)")] | length' "$tmp/settings.json")" \
+    "merge: the watchdog ledger deny rule is written"
   assert_equals '{"matcher":"Bash","hooks":[{"type":"command","command":"bash \"$CLAUDE_PROJECT_DIR\"/scripts/project-gate.sh"}]}' \
     "$(jq -c '.hooks.PreToolUse[0]' "$tmp/settings.json")" "merge: project hook unchanged"
   assert_equals "1" "$(jq '[.permissions.deny[] | select(. == "WebFetch")] | length' "$tmp/settings.json")" \
     "merge: user deny rule kept"
+  rm -rf "$tmp"
+}
+
+# =====================================================================
+# e. runaway-scan (#54) is registered with session-start, on SessionStart and Stop, and
+# the watchdog ledger is denied to Edit
+# =====================================================================
+test_runaway_scan_registration() {
+  local out
+  out=$(gen_with "$BIN_NEW" "" config-guard 2>/dev/null)
+  assert_equals "0" "$(entry_lines "$out" | grep -c '|runaway-scan.sh|')" "runaway-scan: not registered without session-start"
+  assert_equals "1" "$(jq '[.permissions.deny[] | select(. == "Edit(/.claude/watchdog.jsonl)")] | length' <<< "$out")" \
+    "the watchdog ledger is denied to Edit"
+  out=$(gen_with "$BIN_NEW" "" session-start 2>/dev/null)
+  assert_equals "SessionStart|runaway-scan.sh|10|-|command,timeout,type
+Stop|runaway-scan.sh|10|-|command,timeout,type" "$(entry_lines "$out" | grep '|runaway-scan.sh|' | sort)" \
+    "runaway-scan: registered with session-start on SessionStart and Stop"
+  out=$(gen_with "$BIN_OLD" "" session-start 2>/dev/null)
+  assert_equals "2" "$(entry_lines "$out" | grep -c '^[A-Za-z]*|runaway-scan.sh|10|-|')" \
+    "runaway-scan: same entries on an older Claude Code"
+}
+
+# =====================================================================
+# f. Monotonic: a regeneration that wrote no onFailure anywhere (older or no claude)
+# keeps the onFailure already in settings.json on its entries that carry a timeout,
+# matched by event and hook file name, and says so in one line. Nothing else is
+# carried: not a timeout, not a field on a hook that gets no policy. A regeneration
+# that wrote onFailure keeps nothing.
+# =====================================================================
+check_policy_kept() {
+  local label="$1" bin="$2" tmp gen; tmp=$(mktemp -d)
+  merge_hooks_into_settings "$(gen_with "$BIN_NEW" "" "${ALL_HOOKS[@]}" 2>/dev/null)" "$tmp/settings.json"
+  # The user had also put a timeout and onFailure on session-start, which gets no policy,
+  # and the config-guard entry is in an older quoting.
+  jq '(.hooks.SessionStart[].hooks[] | select(.command | endswith("/session-start.sh"))) += {timeout: 20, onFailure: "block"}
+      | (.hooks.PreToolUse[].hooks[] | select(.command | endswith("/config-guard.sh")) | .command)
+          |= "\"$CLAUDE_PROJECT_DIR/.claude/framework/hooks/config-guard.sh\""' \
+    "$tmp/settings.json" > "$tmp/s.json" && mv "$tmp/s.json" "$tmp/settings.json"
+  gen=$(gen_with "$bin" "" "${ALL_HOOKS[@]}" 2>/dev/null)
+  assert_equals "0" "$(jq '[.hooks[][].hooks[] | select(has("onFailure"))] | length' <<< "$gen")" "$label: the regenerated settings have no onFailure"
+  merge_hooks_into_settings "$gen" "$tmp/settings.json" 2>"$tmp/err"
+  assert_equals "0" "$?" "$label: merges"
+  assert_equals "10" "$(jq '[.hooks[][].hooks[] | select(.onFailure == "block")] | length' "$tmp/settings.json")" \
+    "$label: the 10 onFailure fields already written are kept"
+  assert_equals "PreToolUse|config-guard.sh|30|block|command,onFailure,timeout,type" \
+    "$(entry_lines "$(cat "$tmp/settings.json")" | grep '|config-guard.sh|')" \
+    "$label: config-guard keeps onFailure although its old command differed in quoting"
+  assert_equals "SessionStart|session-start.sh|-|-|command,type" \
+    "$(entry_lines "$(cat "$tmp/settings.json")" | grep '|session-start.sh|')" \
+    "$label: session-start (no policy) carries neither the timeout nor the onFailure"
+  assert_equals "1" "$(grep -c . "$tmp/err")" "$label: one stderr line"
+  assert_contains "$(cat "$tmp/err")" "wrote no onFailure.*kept.*config-guard.sh on PreToolUse" \
+    "$label: the line says why and names the entries kept"
+  assert_not_contains "$(cat "$tmp/err")" "session-start.sh" "$label: the line does not name a hook that gets no policy"
+  rm -rf "$tmp"
+}
+test_merge_keeps_existing_policy() {
+  check_policy_kept "older claude" "$BIN_OLD"
+  check_policy_kept "no claude" "$BIN_NONE"
+}
+test_merge_regenerated_policy_wins() {
+  local tmp; tmp=$(mktemp -d)
+  merge_hooks_into_settings "$(gen_with "$BIN_NEW" "" "${ALL_HOOKS[@]}" 2>/dev/null)" "$tmp/settings.json"
+  jq '(.hooks.PreToolUse[].hooks[] | select(.command | endswith("/config-guard.sh"))) += {timeout: 99, onFailure: "continue"}
+      | (.hooks.SessionStart[].hooks[] | select(.command | endswith("/session-start.sh"))) += {onFailure: "block"}' \
+    "$tmp/settings.json" > "$tmp/s.json" && mv "$tmp/s.json" "$tmp/settings.json"
+  merge_hooks_into_settings "$(gen_with "$BIN_NEW" "" "${ALL_HOOKS[@]}" 2>/dev/null)" "$tmp/settings.json" 2>"$tmp/err"
+  assert_equals "PreToolUse|config-guard.sh|30|block|command,onFailure,timeout,type" \
+    "$(entry_lines "$(cat "$tmp/settings.json")" | grep '|config-guard.sh|')" "new claude: the regenerated fields win"
+  assert_equals "SessionStart|session-start.sh|-|-|command,type" \
+    "$(entry_lines "$(cat "$tmp/settings.json")" | grep '|session-start.sh|')" "new claude: nothing is kept on an entry it gives no policy"
+  assert_equals "" "$(cat "$tmp/err")" "new claude: nothing kept, nothing said"
   rm -rf "$tmp"
 }
 
@@ -285,5 +365,8 @@ test_scripts_refuse_in_session
 test_version_compare
 test_version_lookup
 test_merge_carries_policy
+test_runaway_scan_registration
+test_merge_keeps_existing_policy
+test_merge_regenerated_policy_wins
 rm -rf "$BIN_NEW" "$BIN_OLD" "$BIN_GARBAGE" "$BIN_HUGE" "$BIN_NONE"
 run_tests

@@ -97,7 +97,7 @@ The `--prepopulate` flag accepts a JSON file with the same structure as the disc
 
 ## Hooks
 
-**17 hooks** enforce rules mechanically via Claude Code's hook API:
+**18 hooks** enforce rules mechanically via Claude Code's hook API:
 
 | Hook | Zone | Type | What it does |
 |------|------|------|-------------|
@@ -118,6 +118,7 @@ The `--prepopulate` flag accepts a JSON file with the same structure as the disc
 | **changelog-sync-check** | — | Advisory | Warns before editing stale changelogs |
 | **scalability-check** | — | Advisory | Reminds about future platform plans when editing architecture |
 | **pre-deploy-check** | — | Advisory | Warns before deployment commands if commits are unpushed |
+| **runaway-scan** | — | Advisory | At session start and every stop, reports orphaned or CPU-pinned shells (report only; registered with session-start) |
 
 ## Rules
 

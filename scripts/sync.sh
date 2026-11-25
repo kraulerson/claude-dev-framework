@@ -4,6 +4,7 @@ set -euo pipefail
 
 FRAMEWORK_CLONE="$HOME/.claude-dev-framework"
 MANIFEST=".claude/manifest.json"
+# Sourced here for the session check below; sourced again after the pull.
 source "$(dirname "$0")/_shared.sh"
 # Inside a Claude Code session, stop before anything is written if claude cannot be read.
 cdf_require_claude_in_session || exit 1
@@ -21,6 +22,9 @@ echo "Pulling latest framework..."
 pushd "$FRAMEWORK_CLONE" > /dev/null
 git pull origin main --quiet 2>/dev/null || echo "WARNING: Could not pull (offline?). Using local copy."
 popd > /dev/null
+# Again, now that the pull may have changed it, so this sync generates settings with
+# the framework it just pulled, not the one it started with (#53).
+source "$(dirname "$0")/_shared.sh"
 
 # Check version
 FW_VER=$(cat "$FRAMEWORK_CLONE/FRAMEWORK_VERSION" 2>/dev/null || echo "0.0.0")

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # config-guard.sh — PreToolUse (Bash|Write|Edit) blocks modification of framework config and hooks
 # Protects: .claude/settings.json, .claude/manifest.json, .claude/framework/*,
-# .claude/approvals.jsonl (approval audit), .git/hooks/*, .git/config, .git/info/*
+# .claude/approvals.jsonl (approval audit), .claude/watchdog.jsonl (run-limited.sh's
+# kill ledger), .git/hooks/*, .git/config, .git/info/*
 # Also blocks CLAUDE_PROJECT_DIR environment variable overrides.
 # A literal path into a temp fixture outside the project (a test's own
 # .claude/manifest.json under the scratchpad) is not the project's config (#11).
@@ -46,6 +47,11 @@ if [ "$TOOL_NAME" = "Write" ] || [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "
     */.claude/approvals.jsonl|.claude/approvals.jsonl)
       path_is_foreign_temp "$FILE_PATH" && guard_allow
       printf "BLOCKED — .claude/approvals.jsonl is the approval audit; only the framework writes it. Read it or stage it; do not edit it.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second.\n" >&2
+      guard_block
+      ;;
+    */.claude/watchdog.jsonl|.claude/watchdog.jsonl)
+      path_is_foreign_temp "$FILE_PATH" && guard_allow
+      printf "BLOCKED — .claude/watchdog.jsonl is the watchdog ledger (each run that run-limited.sh killed); only run-limited.sh writes it. Read it or stage it; do not edit it.\n\nCOMPLIANCE REMINDER: Your obligation is compliance first, speed second.\n" >&2
       guard_block
       ;;
     */.git/hooks|*/.git/hooks/*|*/.git/config|*/.git/info|*/.git/info/*|\

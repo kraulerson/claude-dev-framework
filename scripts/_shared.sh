@@ -108,6 +108,14 @@ generate_settings_json() {
       entries="${entries}$(jq -n --arg c "${prefix}record-approval.sh" \
         '{event:"UserPromptSubmit",matcher:"",command:$c}')"$'\n'
     fi
+    # The runaway-process report (#54) runs at every session start and every stop,
+    # registered with session-start so an existing project gets it on its next sync.
+    # A timeout but no failure policy: it only reports, and onFailure has no effect on Stop.
+    if [ "$hook" = session-start ]; then
+      entries="${entries}$(jq -nc --arg c "${prefix}runaway-scan.sh" \
+        '{event:"SessionStart",matcher:"",command:$c,timeout:10,nofail:true},
+         {event:"Stop",matcher:"",command:$c,timeout:10,nofail:true}')"$'\n'
+    fi
   done
 
   # Static defense-in-depth permission rules (R-08). Leading `/` anchors at the
@@ -126,6 +134,7 @@ generate_settings_json() {
     "Edit(//tmp/.claude_*)",
     "Edit(//private/tmp/.claude_*)",
     "Edit(/.claude/approvals.jsonl)",
+    "Edit(/.claude/watchdog.jsonl)",
     "Edit(/.git/hooks/**)",
     "Edit(/.git/config)",
     "Edit(/.git/info/**)"
@@ -138,7 +147,7 @@ generate_settings_json() {
       event: .[0].event,
       matcher: .[0].matcher,
       hooks: map({"type":"command","command":.command}
-                 + if .timeout then {timeout: .timeout} + $onfail else {} end)
+                 + if .timeout then {timeout: .timeout} + (if .nofail then {} else $onfail end) else {} end)
     }) |
     group_by(.event) |
     map({
@@ -169,6 +178,12 @@ FRAMEWORK_LEGACY_DENY_RULES='[
 # to each event, so the project's own hooks and groups stay as they were. A hooks
 # block in an unexpected shape, or a file that is not one JSON object, stops the merge
 # (return 1) and leaves the file alone. A missing file is written from hooks_json.
+# Monotonic failure policy: when the regeneration wrote no "onFailure" anywhere (an
+# older, unreadable or missing claude), each generated entry that carries a timeout
+# keeps the "onFailure" the file already holds for the same event and hook file name
+# (the command's quoting may differ between versions), and one stderr line names the
+# entries kept. Nothing else is carried. A regeneration that wrote onFailure keeps
+# nothing. So a sync with such a claude cannot strip the policy.
 # Usage: merge_hooks_into_settings hooks_json settings_file
 merge_hooks_into_settings() {
   local settings_json="$1" settings_file="$2"
@@ -183,6 +198,28 @@ merge_hooks_into_settings() {
       echo "ERROR: $settings_file: not valid JSON (a settings file is one JSON object); hooks not merged; the file is unchanged. Fix it and re-run." >&2
       return 1
     fi
+    local kept_json kept
+    if ! kept_json=$(jq -c --argjson h "$hooks_part" '
+      def hookname: ((.command | strings | capture("framework/hooks/(?<n>[^\"\u0027 /]+)") | .n) // "");
+      [ (.hooks // {}) | objects | to_entries[] | .key as $e | (.value | arrays)[] | objects
+        | (.hooks | arrays)[] | objects | select(hookname != "")
+        | {k: ($e + "\u0000" + hookname), onFailure} ] as $old
+      | ([$h[][]?.hooks[]? | select(has("onFailure"))] | length > 0) as $wrote
+      | def keep($e): . as $n
+          | if $wrote or ($n | has("timeout") | not) then {n: $n, kept: false}
+            else ([$old[] | select(.k == ($e + "\u0000" + ($n | hookname))) | .onFailure | select(. != null)] | .[0]) as $of
+              | if $of == null then {n: $n, kept: false} else {n: ($n + {onFailure: $of}), kept: true} end
+            end;
+      { hooks: ($h | with_entries(.key as $e | .value |= map(.hooks |= map(keep($e).n)))),
+        kept: [ $h | to_entries[] | .key as $e | .value[] | .hooks[] | select(keep($e).kept)
+                | "\(hookname) on \($e)" ] }
+    ' "$settings_file"); then
+      echo "ERROR: $settings_file: could not read its hook entries; hooks not merged; the file is unchanged. Fix the hooks block and re-run." >&2
+      return 1
+    fi
+    hooks_part=$(jq -c '.hooks' <<< "$kept_json")
+    kept=$(jq -r '.kept | join("; ")' <<< "$kept_json")
+    [ -z "$kept" ] || echo "NOTE: $settings_file: this regeneration wrote no onFailure (an older, unreadable or missing claude), so the onFailure already in the file is kept on the entries it gives a timeout, matched by hook file name: $kept" >&2
     if ! jq --argjson h "$hooks_part" --argjson d "$perms_part" \
         --argjson legacy "$FRAMEWORK_LEGACY_DENY_RULES" '
       (if .hooks == null then {} else .hooks end) as $old

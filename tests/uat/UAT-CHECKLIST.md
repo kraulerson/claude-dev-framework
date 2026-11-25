@@ -108,6 +108,60 @@ When:  In a terminal I run chmod -x .claude/framework/hooks/config-guard.sh, sta
 
 ---
 
+## Scenario 10: A Runaway Command Is Ended (run-limited.sh, T1)
+
+```
+Given: A scratch project folder with a .claude/ folder, the framework clone at 4.6.0 or later
+When:  In a terminal in that folder I run ~/.claude-dev-framework/scripts/run-limited.sh --limit 2 -- bash -c 'sh -c "while :; do :; done" uat-spin; exit $?' and then echo $?
+```
+
+- [ ] It returns after about 2 seconds and the exit code printed is 124
+- [ ] One line starting `[WATCHDOG] KILLED reason=limit` was printed
+- [ ] `tail -n 1 .claude/watchdog.jsonl` shows a row with `"reason":"limit"` and `"limit":2`
+- [ ] `pgrep -fl uat-spin` prints nothing
+
+---
+
+## Scenario 11: An Orphaned Shell Is Reported (runaway-scan, T6)
+
+```
+Given: A scratch project installed by init.sh, or by sync.sh at 4.6.0 or later (from 4.5.0: git -C ~/.claude-dev-framework pull first, or run sync.sh twice), so .claude/settings.json registers runaway-scan.sh
+When:  In a terminal I run ( sh -c 'sleep 900; :' uat-orphan & ), wait 11 minutes, then send Claude a prompt in that project
+```
+
+- [ ] When Claude's turn ends, a message shows an `[ORPHAN] pid=… ppid=1 …` line naming `uat-orphan`, and a line saying nothing was killed
+- [ ] A new session started in that project shows the same line at its start
+- [ ] After `kill <pid>` (the pid in the message) the next turn shows no `[ORPHAN]` line
+
+---
+
+## Scenario 12: An Idle Orphan Is Reported Once per Session (runaway-scan)
+
+```
+Given: Scenario 11's orphan, still running and already reported once in this session
+When:  I send Claude two more prompts in the same session, then start a new session in that project
+```
+
+- [ ] Neither of the two later turns shows the `uat-orphan` line again
+- [ ] The new session shows it once at its start
+- [ ] `kill <pid>` afterwards (the pid in the message)
+
+---
+
+## Scenario 13: Stragglers Are Ended (run-limited.sh)
+
+```
+Given: A scratch project folder with a .claude/ folder, the framework clone at 4.6.0 or later
+When:  In a terminal in that folder I run ~/.claude-dev-framework/scripts/run-limited.sh --limit 30 -- bash -c 'perl -e "sleep 60" uat-straggler & exit 0' and then echo $?
+```
+
+- [ ] It returns within about 6 seconds and the exit code printed is 0
+- [ ] One line starting `[WATCHDOG] KILLED reason=stragglers` was printed
+- [ ] `tail -n 1 .claude/watchdog.jsonl` shows a row with `"reason":"stragglers"`
+- [ ] `pgrep -fl uat-straggler` prints nothing
+
+---
+
 ## Notes
 
 _Record any issues, unexpected behavior, or observations here:_
