@@ -82,9 +82,9 @@ test_stale_framework_hooks_removed() {
   {"type":"command","command":"bash \"$CLAUDE_PROJECT_DIR\"/scripts/project-version-check.sh"}]}]}}
 EOF
   merge_hooks_into_settings "$(generate_settings_json session-start)" "$tmp/legacy.json"
-  assert_equals '[["bash \"$CLAUDE_PROJECT_DIR\"/scripts/project-version-check.sh"],["\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/session-start.sh"]]' \
+  assert_equals '[["bash \"$CLAUDE_PROJECT_DIR\"/scripts/project-version-check.sh"],["\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/session-start.sh","\"$CLAUDE_PROJECT_DIR\"/.claude/framework/hooks/runaway-scan.sh"]]' \
     "$(jq -c '[.hooks.SessionStart[] | [.hooks[].command]]' "$tmp/legacy.json")" \
-    "legacy forms: old framework commands replaced by the generated one, project command kept"
+    "legacy forms: old framework commands replaced by the generated ones (session-start, runaway-scan beside it), project command kept"
   rm -rf "$tmp"
 }
 

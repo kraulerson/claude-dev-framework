@@ -967,6 +967,28 @@ test_approvals_log_protected() {
   teardown_test_project
 }
 
+# --- Test (#54): the watchdog ledger .claude/watchdog.jsonl is written only by
+# run-limited.sh; the agent can read and stage it ---
+test_watchdog_ledger_protected() {
+  local cmd
+  setup_test_project
+  EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_write_input "$TEST_DIR/.claude/watchdog.jsonl")")
+  assert_exit_code "2" "$EXIT_CODE" "Write to watchdog.jsonl must be refused"
+  RESULT=$(run_hook "$HOOK" "$(cg_write_input "$TEST_DIR/.claude/watchdog.jsonl")")
+  assert_contains "$RESULT" "watchdog ledger" "the Write refusal names the watchdog ledger"
+  for cmd in 'echo x > .claude/watchdog.jsonl' 'echo "{}" >> .claude/watchdog.jsonl' 'rm .claude/watchdog.jsonl' \
+             'sed -i "" 1d .claude/watchdog.jsonl' 'cp /dev/null .claude/watchdog.jsonl'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd")")
+    assert_exit_code "2" "$EXIT_CODE" "must be refused: $cmd"
+  done
+  for cmd in 'cat .claude/watchdog.jsonl' 'git add .claude/watchdog.jsonl' 'jq . .claude/watchdog.jsonl' \
+             'tail -n 5 .claude/watchdog.jsonl'; do
+    EXIT_CODE=$(run_hook_exit_code "$HOOK" "$(cg_input "$cmd")")
+    assert_exit_code "0" "$EXIT_CODE" "must still pass: $cmd"
+  done
+  teardown_test_project
+}
+
 # --- Test (approval design B, spec 10): no form of mark-evaluated.sh is sanctioned ---
 test_mark_evaluated_never_sanctioned() {
   local cmd
@@ -1586,6 +1608,7 @@ test_mark_chain_names_lone_form
 test_old_helpers_still_block_writes
 test_git_paths_protected
 test_approvals_log_protected
+test_watchdog_ledger_protected
 test_mark_evaluated_never_sanctioned
 test_state_hooks_refused_anywhere
 test_state_hooks_reads_pass

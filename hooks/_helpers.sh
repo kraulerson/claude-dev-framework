@@ -427,10 +427,11 @@ normalize_command_paths() {
 # directory is not: the word appears in commit messages and everyday commands, and a
 # copy into it needs a source file already named settings.json — no cheaper than the
 # write-a-script-then-run-it residual (R-23).
-# Also the approval audit .claude/approvals.jsonl, and git's hooks, config and info
+# Also the approval audit .claude/approvals.jsonl, the watchdog ledger
+# .claude/watchdog.jsonl (run-limited.sh, #54), and git's hooks, config and info
 # files: a hook planted there runs inside `git commit` and can change what an approved
 # commit contains (approval design B, D7). `.gitignore` and `.github/` do not match.
-CONFIG_GUARD_PROTECTED_RE='\.claude/(settings\.json|settings\.local\.json|manifest\.json|framework/|approvals\.jsonl)|\.claude/framework([^[:alnum:]_./-]|$)|\.git/(hooks|info|config)([^[:alnum:]_.-]|$)'
+CONFIG_GUARD_PROTECTED_RE='\.claude/(settings\.json|settings\.local\.json|manifest\.json|framework/|approvals\.jsonl|watchdog\.jsonl)|\.claude/framework([^[:alnum:]_./-]|$)|\.git/(hooks|info|config)([^[:alnum:]_.-]|$)'
 
 # A lone command: no chaining, piping, redirection, substitution or newline.
 is_lone_command() {
